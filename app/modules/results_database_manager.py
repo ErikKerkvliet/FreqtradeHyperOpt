@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import re
 
@@ -126,12 +126,27 @@ class ResultsDatabaseManager:
                     )
                 """)
 
+                # NEW TABLE: Store hyperopt JSON results
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS hyperopt_json_results (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        optimization_id INTEGER NOT NULL,
+                        session_id INTEGER,
+                        hyperopt_json_data TEXT NOT NULL,
+                        created_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (optimization_id) REFERENCES strategy_optimizations(id) ON DELETE CASCADE,
+                        FOREIGN KEY (session_id) REFERENCES optimization_sessions(id) ON DELETE CASCADE
+                    )
+                """)
+
                 # Create indexes if they don't exist
                 indexes = [
                     "CREATE INDEX IF NOT EXISTS idx_strategy_profit ON strategy_optimizations(strategy_name, total_profit_pct)",
                     "CREATE INDEX IF NOT EXISTS idx_timeframe_profit ON strategy_optimizations(timeframe, total_profit_pct)",
                     "CREATE INDEX IF NOT EXISTS idx_timestamp ON strategy_optimizations(optimization_timestamp)",
-                    "CREATE INDEX IF NOT EXISTS idx_status ON strategy_optimizations(status)"
+                    "CREATE INDEX IF NOT EXISTS idx_status ON strategy_optimizations(status)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_optimization ON hyperopt_json_results(optimization_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_session ON hyperopt_json_results(session_id)"
                 ]
 
                 for index_sql in indexes:
@@ -176,6 +191,97 @@ class ResultsDatabaseManager:
         except Exception as e:
             self.logger.error(f"Failed to start session: {e}")
             raise
+
+    def save_hyperopt_json_result(self, optimization_id: int, session_id: int, hyperopt_json_data: str) -> int:
+        """
+        Save the raw hyperopt JSON result to the database.
+
+        Args:
+            optimization_id: ID of the optimization record
+            session_id: ID of the session
+            hyperopt_json_data: Raw JSON string from hyperopt-show command
+
+        Returns:
+            ID of the inserted hyperopt JSON record
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    INSERT INTO hyperopt_json_results (optimization_id, session_id, hyperopt_json_data)
+                    VALUES (?, ?, ?)
+                """, (optimization_id, session_id, hyperopt_json_data))
+
+                json_result_id = cursor.lastrowid
+                conn.commit()
+
+                self.logger.info(f"Saved hyperopt JSON result {json_result_id} for optimization {optimization_id}")
+                return json_result_id
+
+        except Exception as e:
+            self.logger.error(f"Failed to save hyperopt JSON result: {e}")
+            raise
+
+    def get_hyperopt_json_result(self, optimization_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve the hyperopt JSON result for a specific optimization.
+
+        Args:
+            optimization_id: ID of the optimization record
+
+        Returns:
+            Parsed JSON data or None if not found
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT hyperopt_json_data FROM hyperopt_json_results 
+                    WHERE optimization_id = ?
+                    ORDER BY created_timestamp DESC
+                    LIMIT 1
+                """, (optimization_id,))
+
+                result = cursor.fetchone()
+                if result:
+                    return json.loads(result[0])
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Failed to get hyperopt JSON result: {e}")
+            return None
+
+    def get_session_hyperopt_results(self, session_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all hyperopt JSON results for a specific session.
+
+        Args:
+            session_id: ID of the session
+
+        Returns:
+            List of hyperopt JSON results with metadata
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute("""
+                    SELECT hjr.id, hjr.optimization_id, hjr.hyperopt_json_data, hjr.created_timestamp,
+                           so.strategy_name, so.total_profit_pct, so.total_trades
+                    FROM hyperopt_json_results hjr
+                    JOIN strategy_optimizations so ON hjr.optimization_id = so.id
+                    WHERE hjr.session_id = ?
+                    ORDER BY so.total_profit_pct DESC
+                """, (session_id,))
+
+                results = []
+                for row in cursor.fetchall():
+                    result_dict = dict(row)
+                    result_dict['hyperopt_json_data'] = json.loads(result_dict['hyperopt_json_data'])
+                    results.append(result_dict)
+
+                return results
+
+        except Exception as e:
+            self.logger.error(f"Failed to get session hyperopt results: {e}")
+            return []
 
     def save_optimization_result(self, result: OptimizationResult, session_id: Optional[int] = None) -> int:
         """

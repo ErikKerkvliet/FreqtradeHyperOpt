@@ -468,7 +468,7 @@ pip install freqtrade
 
 ```python
 import sqlite3
-from results_database_manager import ResultsDatabaseManager
+from app.modules.results_database_manager import ResultsDatabaseManager
 
 # Initialize database manager
 db_manager = ResultsDatabaseManager()
@@ -477,16 +477,16 @@ db_manager = ResultsDatabaseManager()
 best_strategies = db_manager.get_best_strategies(limit=10)
 
 # Custom query example
-with sqlite3.connect('freqtrade_results.db') as conn:
-    cursor = conn.execute("""
+with sqlite3.connect('old/freqtrade_results.db') as conn:
+   cursor = conn.execute("""
         SELECT strategy_name, AVG(total_profit_pct) as avg_profit
         FROM strategy_optimizations 
         WHERE total_trades >= 20
         GROUP BY strategy_name
         ORDER BY avg_profit DESC
     """)
-    for row in cursor.fetchall():
-        print(f"{row[0]}: {row[1]:.2f}% average profit")
+   for row in cursor.fetchall():
+      print(f"{row[0]}: {row[1]:.2f}% average profit")
 ```
 
 ### Batch Processing
@@ -555,21 +555,21 @@ If you have existing result files, you can create a migration script:
 # migration_example.py
 import json
 from pathlib import Path
-from results_database_manager import ResultsDatabaseManager, OptimizationResult
+from app.modules.results_database_manager import ResultsDatabaseManager, OptimizationResult
 
 db_manager = ResultsDatabaseManager()
 
 # Process existing result files
 results_dir = Path("old_results")
 for result_file in results_dir.glob("*.json"):
-    with open(result_file, 'r') as f:
-        data = json.load(f)
-    
-    # Extract data and create OptimizationResult
-    # ... (custom parsing logic based on your old file format)
-    
-    # Save to database
-    db_manager.save_optimization_result(result)
+   with open(result_file, 'r') as f:
+      data = json.load(f)
+
+   # Extract data and create OptimizationResult
+   # ... (custom parsing logic based on your old file format)
+
+   # Save to database
+   db_manager.save_optimization_result(result)
 ```
 
 ## Support

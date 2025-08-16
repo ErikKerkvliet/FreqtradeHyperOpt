@@ -8,9 +8,9 @@ import argparse
 import json
 import sqlite3
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Optional
 from tabulate import tabulate
-from results_database_manager import ResultsDatabaseManager
+from .results_database_manager import ResultsDatabaseManager
 
 
 class ResultsAnalyzer:
@@ -215,6 +215,46 @@ class ResultsAnalyzer:
         except Exception as e:
             print(f"Error retrieving config details: {e}")
 
+    def show_hyperopt_json(self, optimization_id: int) -> None:
+        """Show the raw hyperopt JSON result for a specific optimization."""
+        print(f"\n📊 HYPEROPT JSON RESULT - ID {optimization_id}")
+        print("=" * 80)
+
+        try:
+            hyperopt_data = self.db_manager.get_hyperopt_json_result(optimization_id)
+
+            if hyperopt_data:
+                print(json.dumps(hyperopt_data, indent=2))
+            else:
+                print(f"No hyperopt JSON result found for optimization ID {optimization_id}")
+
+        except Exception as e:
+            print(f"Error retrieving hyperopt JSON result: {e}")
+
+    def show_session_hyperopt_results(self, session_id: int) -> None:
+        """Show all hyperopt results for a specific session."""
+        print(f"\n📊 SESSION {session_id} HYPEROPT RESULTS")
+        print("=" * 80)
+
+        try:
+            results = self.db_manager.get_session_hyperopt_results(session_id)
+
+            if not results:
+                print(f"No hyperopt results found for session {session_id}")
+                return
+
+            for result in results:
+                print(f"\n--- {result['strategy_name']} (Profit: {result['total_profit_pct']:+.2f}%) ---")
+                print(f"Optimization ID: {result['optimization_id']}")
+                print(f"Trades: {result['total_trades']}")
+                print(f"Created: {result['created_timestamp']}")
+                print("\nHyperopt JSON Data:")
+                print(json.dumps(result['hyperopt_json_data'], indent=2))
+                print("-" * 60)
+
+        except Exception as e:
+            print(f"Error retrieving session hyperopt results: {e}")
+
     def show_sessions(self, limit: int = 10) -> None:
         """Show recent optimization sessions."""
         print(f"\n📅 RECENT SESSIONS")
@@ -294,6 +334,37 @@ class ResultsAnalyzer:
         except Exception as e:
             print(f"Error exporting configs: {e}")
 
+    def export_hyperopt_results(self, session_id: int, output_dir: str = "hyperopt_exports") -> None:
+        """Export all hyperopt JSON results for a session."""
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+
+        print(f"\n💾 EXPORTING HYPEROPT RESULTS FOR SESSION {session_id}")
+        print("=" * 80)
+
+        try:
+            results = self.db_manager.get_session_hyperopt_results(session_id)
+
+            if not results:
+                print(f"No hyperopt results found for session {session_id}")
+                return
+
+            for result in results:
+                # Create filename with strategy name and profit
+                filename = f"session{session_id}_{result['strategy_name']}_opt{result['optimization_id']}_profit{result['total_profit_pct']:+.2f}%.json"
+                file_path = output_path / filename
+
+                # Save the hyperopt JSON data
+                with open(file_path, 'w') as f:
+                    json.dump(result['hyperopt_json_data'], f, indent=2)
+
+                print(f"✓ Exported: {filename}")
+
+            print(f"\nHyperopt results exported to: {output_path}")
+
+        except Exception as e:
+            print(f"Error exporting hyperopt results: {e}")
+
 
 def main():
     """Main CLI interface."""
@@ -319,6 +390,14 @@ def main():
     config_parser = subparsers.add_parser("config", help="Show configuration details")
     config_parser.add_argument("id", type=int, help="Optimization ID")
 
+    # Show hyperopt JSON command
+    hyperopt_parser = subparsers.add_parser("hyperopt", help="Show hyperopt JSON result")
+    hyperopt_parser.add_argument("id", type=int, help="Optimization ID")
+
+    # Show session hyperopt results command
+    session_hyperopt_parser = subparsers.add_parser("session-hyperopt", help="Show all hyperopt results for a session")
+    session_hyperopt_parser.add_argument("session_id", type=int, help="Session ID")
+
     # Sessions command
     sessions_parser = subparsers.add_parser("sessions", help="Show recent sessions")
     sessions_parser.add_argument("--limit", type=int, default=10, help="Number of sessions to show")
@@ -327,6 +406,11 @@ def main():
     export_parser = subparsers.add_parser("export", help="Export best configurations")
     export_parser.add_argument("--output", default="best_configs", help="Output directory")
     export_parser.add_argument("--limit", type=int, default=5, help="Number of configs to export")
+
+    # Export hyperopt results command
+    export_hyperopt_parser = subparsers.add_parser("export-hyperopt", help="Export hyperopt results for a session")
+    export_hyperopt_parser.add_argument("session_id", type=int, help="Session ID")
+    export_hyperopt_parser.add_argument("--output", default="hyperopt_exports", help="Output directory")
 
     args = parser.parse_args()
 
@@ -345,10 +429,16 @@ def main():
             analyzer.show_timeframe_analysis()
         elif args.command == "config":
             analyzer.show_config_details(args.id)
+        elif args.command == "hyperopt":
+            analyzer.show_hyperopt_json(args.id)
+        elif args.command == "session-hyperopt":
+            analyzer.show_session_hyperopt_results(args.session_id)
         elif args.command == "sessions":
             analyzer.show_sessions(args.limit)
         elif args.command == "export":
             analyzer.export_best_configs(args.output, args.limit)
+        elif args.command == "export-hyperopt":
+            analyzer.export_hyperopt_results(args.session_id, args.output)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

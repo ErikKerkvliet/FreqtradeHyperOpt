@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from optimization_config import OptimizationConfig
+from .optimization_config import OptimizationConfig
 
 class StrategyConfigManager:
     """
@@ -18,8 +18,8 @@ class StrategyConfigManager:
         """
         self.config = config
         self.logger = logger
-        self.template_path = Path("config_template.json")
-        self.config_dir = Path("optimization_results/config_files")
+        self.template_path = Path("../../old/config_template.json")
+        self.config_dir = Path("../../old/optimization_results/config_files")
 
     def create_config(self, strategy_name: str) -> bool:
         """
