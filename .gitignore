@@ -1,0 +1,8 @@
+.env
+*.iml
+*.db
+*.xml
+
+.idea/
+optimization_results/
+logs/
