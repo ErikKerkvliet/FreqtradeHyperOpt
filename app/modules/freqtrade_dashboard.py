@@ -396,6 +396,8 @@ class FreqTradeDashboard:
         columns = ('Pair', 'Base', 'Quote', 'Timeframe', 'Start Date', 'End Date', 'Records', 'File Size', 'Last Modified')
         tree = ttk.Treeview(table_frame, columns=columns, show='headings', selectmode='extended')
 
+        tree._all_data = []  # Store all data for filtering
+
         # Configure column headings and widths
         tree.heading('Pair', text='Trading Pair')
         tree.heading('Base', text='Base')
@@ -476,12 +478,10 @@ class FreqTradeDashboard:
 
     def load_exchange_data(self, exchange_name, tree, data_base_dir):
         """Load data files for a specific exchange."""
-        # Clear existing items
+        # Clear existing items and stored data
         for item in tree.get_children():
             tree.delete(item)
-
-        # Clear stored data
-        tree._all_items_data = []
+        tree._all_data = []
 
         exchange_dirs = []
 
@@ -561,10 +561,11 @@ class FreqTradeDashboard:
                         tags = (str(json_file),)
 
                         # Store data for filtering
-                        tree._all_items_data.append((values, tags))
-
-                        # Insert into tree
-                        tree.insert('', 'end', values=values, tags=tags)
+                        tree._all_data.append({
+                            'values': values,
+                            'file_path': str(json_file),
+                            'visible': True
+                        })
 
                         loaded_files += 1
 
@@ -575,6 +576,8 @@ class FreqTradeDashboard:
             except Exception as e:
                 self.logger.error(f"Error scanning exchange directory {exchange_dir}: {e}")
                 continue
+
+        self._display_filtered_data(tree)
 
         # Update summary
         if hasattr(tree, 'summary_var'):
@@ -624,6 +627,16 @@ class FreqTradeDashboard:
         s = round(size_bytes / p, 2)
         return f"{s} {size_names[i]}"
 
+    def _display_filtered_data(self, tree):
+        """Display filtered data in the treeview."""
+        # Clear current display
+        for item in tree.get_children():
+            tree.delete(item)
+
+        # Add visible items
+        for data_item in tree._all_data:
+            if data_item['visible']:
+                tree.insert('', 'end', values=data_item['values'], tags=(data_item['file_path'],))
 
     def apply_filters(self, exchange_name):
         """Apply all filters to the exchange data display."""
@@ -635,15 +648,14 @@ class FreqTradeDashboard:
         base_currency_filter = tree.base_currency_var.get()
         quote_currency_filter = tree.quote_currency_var.get()
 
-        # Get all items (including hidden ones)
-        all_items = list(tree.get_children()) + list(tree.get_detached())
-
         visible_count = 0
-        total_count = len(all_items)
+        total_count = len(tree._all_data)
 
-        for item in all_items:
-            values = tree.item(item)['values']
+        # Apply filters to stored data
+        for data_item in tree._all_data:
+            values = data_item['values']
             if not values or len(values) < 9:
+                data_item['visible'] = False
                 continue
 
             pair, base_currency, quote_currency, timeframe, start_date, end_date, records, file_size, last_modified = values
@@ -651,30 +663,21 @@ class FreqTradeDashboard:
             # Apply filters
             show_item = True
 
-            # Search filter (searches in pair name)
             if search_text and search_text not in pair.upper():
                 show_item = False
-
-            # Timeframe filter
             if timeframe_filter != "All" and timeframe != timeframe_filter:
                 show_item = False
-
-            # Base currency filter
             if base_currency_filter != "All" and base_currency != base_currency_filter:
                 show_item = False
-
-            # Quote currency filter
             if quote_currency_filter != "All" and quote_currency != quote_currency_filter:
                 show_item = False
 
-            # Show/hide item
+            data_item['visible'] = show_item
             if show_item:
-                if item not in tree.get_children():
-                    tree.reattach(item, '', 'end')
                 visible_count += 1
-            else:
-                if item in tree.get_children():
-                    tree.detach(item)
+
+        # Update display
+        self._display_filtered_data(tree)
 
         # Update summary
         if hasattr(tree, 'summary_var'):
@@ -682,7 +685,6 @@ class FreqTradeDashboard:
                 tree.summary_var.set(f"Showing all {total_count} data files")
             else:
                 tree.summary_var.set(f"Showing {visible_count} of {total_count} data files")
-
 
     def apply_quick_filter(self, exchange_name, filter_type):
         """Apply predefined quick filters."""
@@ -696,21 +698,22 @@ class FreqTradeDashboard:
             tree.search_var.set('')
 
             # Custom filter for hourly+
-            all_items = list(tree.get_children()) + list(tree.get_detached())
             hourly_timeframes = ['1h', '4h', '1d', '1w', '12h', '6h', '8h']
 
             visible_count = 0
-            for item in all_items:
-                values = tree.item(item)['values']
+            for data_item in tree._all_data:
+                values = data_item['values']
                 if values and len(values) >= 4:
                     timeframe = values[3]
                     if timeframe in hourly_timeframes:
-                        if item not in tree.get_children():
-                            tree.reattach(item, '', 'end')
+                        data_item['visible'] = True
                         visible_count += 1
                     else:
-                        if item in tree.get_children():
-                            tree.detach(item)
+                        data_item['visible'] = False
+                else:
+                    data_item['visible'] = False
+
+            self._display_filtered_data(tree)
 
             if hasattr(tree, 'summary_var'):
                 tree.summary_var.set(f"Showing {visible_count} hourly+ timeframe files")
@@ -731,7 +734,6 @@ class FreqTradeDashboard:
             tree.search_var.set('')
             self.apply_filters(exchange_name)
 
-
     def clear_filters(self, exchange_name):
         """Clear all filters for an exchange."""
         tree = self.exchange_trees[exchange_name]
@@ -742,24 +744,23 @@ class FreqTradeDashboard:
         tree.base_currency_var.set('All')
         tree.quote_currency_var.set('All')
 
-        # Reshow all items
-        all_items = list(tree.get_children()) + list(tree.get_detached())
-        for item in all_items:
-            if item not in tree.get_children():
-                tree.reattach(item, '', 'end')
+        # Show all items
+        for data_item in tree._all_data:
+            data_item['visible'] = True
+
+        self._display_filtered_data(tree)
 
         # Update summary
         if hasattr(tree, 'summary_var'):
-            total_count = len(all_items)
+            total_count = len(tree._all_data)
             tree.summary_var.set(f"Showing all {total_count} data files")
-
 
     def download_new_data(self):
         """Open dialog to download new data."""
         # Create a simple dialog for downloading data
         dialog = tk.Toplevel(self.root)
         dialog.title("Download Data")
-        dialog.geometry("400x300")
+        dialog.geometry("450x343")
         dialog.resizable(False, False)
 
         # Make dialog modal
@@ -769,7 +770,7 @@ class FreqTradeDashboard:
         # Center the dialog
         dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
 
-        # Create form
+        # Create main frame with padding
         main_frame = ttk.Frame(dialog, padding=20)
         main_frame.pack(fill='both', expand=True)
 
@@ -796,18 +797,16 @@ class FreqTradeDashboard:
         for i, tf in enumerate(timeframes):
             var = tk.BooleanVar(value=(tf in ['5m', '1h']))
             timeframe_vars[tf] = var
-            ttk.Checkbutton(timeframes_frame, text=tf, variable=var).grid(row=i // 4, column=i % 4, sticky='w')
+            ttk.Checkbutton(timeframes_frame, text=tf, variable=var).grid(row=i // 4, column=i % 4, sticky='w',
+                                                                          padx=(0, 10))
 
         # Timerange
         ttk.Label(main_frame, text="Days of history:").pack(anchor='w')
         days_var = tk.StringVar(value="30")
         days_entry = ttk.Entry(main_frame, textvariable=days_var)
-        days_entry.pack(fill='x', pady=(0, 10))
+        days_entry.pack(fill='x', pady=(0, 20))
 
-        # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', pady=(10, 0))
-
+        # Define start_download function
         def start_download():
             # Get selected timeframes
             selected_timeframes = [tf for tf, var in timeframe_vars.items() if var.get()]
@@ -843,13 +842,16 @@ class FreqTradeDashboard:
                               "-p"] + pairs
 
                 # Switch to execution tab and run command
-                self.notebook.select(2)  # Execution tab
+                self.notebook.select(3)  # Execution tab
                 self.execute_command(command, f"Data Download ({timeframe})")
                 break  # Only run first command, user can run others manually
 
-        ttk.Button(button_frame, text="Download", command=start_download).pack(side='right', padx=(5, 0))
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right')
+        # Buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill='x')
 
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=(5, 0))
+        ttk.Button(button_frame, text="Download", command=start_download).pack(side='right')
 
     def delete_selected_data(self):
         """Delete selected data files."""
@@ -967,6 +969,21 @@ class FreqTradeDashboard:
         ttk.Label(params_frame, text="Epochs:").pack(anchor='w')
         self.exec_epochs_var = tk.StringVar(value="100")
         ttk.Entry(params_frame, textvariable=self.exec_epochs_var, width=25).pack(fill='x', pady=(0, 10))
+
+        # Hyperopt Loss Function
+        ttk.Label(params_frame, text="Hyperopt Loss Function:").pack(anchor='w')
+        self.exec_hyperfunction_var = tk.StringVar(value=self.hyperfunction)
+        hyperfunction_combo = ttk.Combobox(params_frame, textvariable=self.exec_hyperfunction_var, width=25)
+        hyperfunction_combo['values'] = [
+            'SharpeHyperOptLoss',
+            'SortinoHyperOptLoss',
+            'CalmarHyperOptLoss',
+            'MaxDrawDownHyperOptLoss',
+            'ProfitDrawDownHyperOptLoss',
+            'OnlyProfitHyperOptLoss',
+            'ShortTradeDurHyperOptLoss'
+        ]
+        hyperfunction_combo.pack(fill='x', pady=(0, 10))
 
         # Hyperopt spaces
         ttk.Label(params_frame, text="Hyperopt Spaces:").pack(anchor='w')
@@ -1372,6 +1389,7 @@ class FreqTradeDashboard:
 
 
     def run_hyperopt(self):
+        self.notebook.select(3)
         """Run hyperopt optimization using the executor."""
         if self.executor and self.executor.is_running:
             messagebox.showwarning("Warning", "Another process is already running!")
@@ -1406,6 +1424,8 @@ class FreqTradeDashboard:
             messagebox.showerror("Error", "Please enter a valid number of epochs!")
             return
 
+        selected_hyperfunction = self.exec_hyperfunction_var.get()
+
         # Clear output and start execution
         self.output_text.delete(1.0, tk.END)
         self.progress_bar.start()
@@ -1418,7 +1438,7 @@ class FreqTradeDashboard:
                     timerange=timerange,
                     epochs=epochs_int,
                     spaces=selected_spaces,
-                    hyperopt_loss=self.hyperfunction
+                    hyperopt_loss=selected_hyperfunction  # CHANGE: Use selected function
                 )
 
                 # Update GUI in main thread
@@ -1478,7 +1498,6 @@ class FreqTradeDashboard:
         self.execution_thread.daemon = True
         self.execution_thread.start()
 
-
     def execute_command(self, command, operation_name):
         """Execute a FreqTrade command in a separate thread."""
 
@@ -1509,7 +1528,15 @@ class FreqTradeDashboard:
                         )
                     else:  # Unix/Linux
                         venv_activate = Path(self.freqtrade_path) / '.venv' / 'bin' / 'activate'
-                        full_command = f'source "{venv_activate}" && ' + ' '.join(command)
+                        # Use bash explicitly and check if venv exists
+                        if venv_activate.exists():
+                            full_command = f'bash -c "source {venv_activate} && {" ".join(command)}"'
+                        else:
+                            # Try without virtual environment
+                            full_command = ' '.join(command)
+                            self.root.after(0, lambda: self.append_output(
+                                "Warning: Virtual environment not found, running without venv\n"))
+
                         self.current_process = subprocess.Popen(
                             full_command,
                             shell=True,

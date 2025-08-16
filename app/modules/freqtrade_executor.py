@@ -546,10 +546,7 @@ class FreqTradeExecutor:
                 avg_profit_pct=parsed_metrics.get('avg_profit_pct', 0.0),
                 max_drawdown_pct=parsed_metrics.get('max_drawdown_pct', 0.0),
                 sharpe_ratio=parsed_metrics.get('sharpe_ratio', 0.0),
-                config_data=config_data,
-                hyperopt_results=hyperopt_json_results,
-                optimization_duration=optimization_duration,
-                run_number=run_number
+                config_data=config_data
             )
 
             # Save to database

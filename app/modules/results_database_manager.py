@@ -303,12 +303,6 @@ class ResultsDatabaseManager:
             with open(config_path, 'w') as f:
                 json.dump(result.config_data, f, indent=2)
 
-            # Save hyperopt results file
-            hyperopt_filename = f"{timestamp}_{result.strategy_name}_run{result.run_number}_hyperopt.json"
-            hyperopt_path = self.results_dir / "hyperopt_results" / hyperopt_filename
-            with open(hyperopt_path, 'w') as f:
-                json.dump(result.hyperopt_results, f, indent=2)
-
             # Extract config data for database
             config = result.config_data
             pair_whitelist = json.dumps(config.get('exchange', {}).get('pair_whitelist', []))
@@ -322,9 +316,8 @@ class ResultsDatabaseManager:
                         pair_whitelist, pair_blacklist, exchange_name, hyperopt_function,
                         epochs, timerange, total_profit_pct, total_profit_abs, total_trades,
                         win_rate, avg_profit_pct, max_drawdown_pct, sharpe_ratio,
-                        config_file_path, hyperopt_result_file_path,
-                        optimization_duration_seconds, run_number
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_file_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     result.strategy_name,
                     config.get('max_open_trades'),
@@ -344,10 +337,7 @@ class ResultsDatabaseManager:
                     result.avg_profit_pct,
                     result.max_drawdown_pct,
                     result.sharpe_ratio,
-                    str(config_path),
-                    str(hyperopt_path),
-                    result.optimization_duration,
-                    result.run_number
+                    str(config_path)
                 ))
 
                 optimization_id = cursor.lastrowid
