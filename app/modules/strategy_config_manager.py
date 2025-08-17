@@ -18,8 +18,8 @@ class StrategyConfigManager:
         """
         self.config = config
         self.logger = logger
-        self.template_path = Path("../../old/config_template.json")
-        self.config_dir = Path("../../old/optimization_results/config_files")
+        self.template_path = Path("resources/config_template.json")
+        self.config_dir = Path("configs")
 
     def create_config(self, strategy_name: str) -> bool:
         """

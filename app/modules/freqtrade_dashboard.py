@@ -1379,9 +1379,12 @@ class FreqTradeDashboard:
     # Execution Methods
     def browse_config_file(self):
         """Browse for configuration file for execution."""
+
+        initial_path = Path(self.freqtrade_path) / "user_data" / "config"
         file_path = filedialog.askopenfilename(
             title="Select Configuration File",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=self.freqtrade_path
         )
 
         if file_path:

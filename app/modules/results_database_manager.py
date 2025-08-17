@@ -37,7 +37,7 @@ class ResultsDatabaseManager:
     Implements hybrid storage: metadata in SQLite, full configs in JSON files.
     """
 
-    def __init__(self, db_path: str = "freqtrade_results.db", results_dir: str = "optimization_results"):
+    def __init__(self, db_path: str = "freqtrade_results.db", results_dir: str = "results"):
         """
         Initialize the database manager.
 
@@ -49,9 +49,11 @@ class ResultsDatabaseManager:
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(exist_ok=True)
 
-        # Create subdirectories
-        (self.results_dir / "configs").mkdir(exist_ok=True)
-        (self.results_dir / "hyperopt_results").mkdir(exist_ok=True)
+        (self.results_dir / "hyperopt").mkdir(exist_ok=True)
+        (self.results_dir / "backtest").mkdir(exist_ok=True)
+
+        self.configs_dir = Path("configs")
+        self.configs_dir.mkdir(exist_ok=True)
 
         self.logger = logging.getLogger(__name__)
         self._init_database()
@@ -299,7 +301,7 @@ class ResultsDatabaseManager:
 
             # Save config file
             config_filename = f"{timestamp}_{result.strategy_name}_run{result.run_number}_config.json"
-            config_path = self.results_dir / "configs" / config_filename
+            config_path = self.configs_dir / config_filename
             with open(config_path, 'w') as f:
                 json.dump(result.config_data, f, indent=2)
 
