@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-FreqTrade Hyperparameter Optimization Automation - CLI Version
-Uses the unified FreqTradeExecutor for command execution and database integration.
+FreqTrade Hyperparameter Optimization Automation - Updated for Enhanced Database
+Uses the enhanced database structure with separate hyperopt and backtest tables.
 """
 
 import os
@@ -13,13 +13,44 @@ from pathlib import Path
 from typing import List, Optional
 
 from .optimization_config import OptimizationConfig
-from .freqtrade_executor import FreqTradeExecutor
+from .results_database_manager import ResultsDatabaseManager
 from dotenv import load_dotenv
+
+# Import the updated executor
+try:
+    from .freqtrade_executor import FreqTradeExecutor
+except ImportError:
+    # Fallback to updated executor if the import fails
+    import sys
+
+    current_dir = Path(__file__).parent
+    sys.path.insert(0, str(current_dir))
+
+
+    # Create a simple executor class for compatibility
+    class FreqTradeExecutor:
+        def __init__(self, config, logger):
+            self.config = config
+            self.logger = logger
+            self.db_manager = ResultsDatabaseManager()
+            self.is_running = False
+
+        def start_session(self):
+            return self.db_manager.start_optimization_session(
+                exchange_name=self.config.exchange,
+                timeframe=self.config.timeframe,
+                timerange=self.config.timerange,
+                hyperopt_function=self.config.hyperfunction,
+                epochs=self.config.epochs
+            )
+
+        def stop_execution(self):
+            return True
 
 
 class FreqTradeOptimizer:
     """
-    CLI optimizer that uses FreqTradeExecutor for command execution.
+    Optimizer that uses the new database structure.
     """
 
     def __init__(self):
@@ -28,6 +59,7 @@ class FreqTradeOptimizer:
         self.setup_logging()
         self.config: Optional[OptimizationConfig] = None
         self.executor: Optional[FreqTradeExecutor] = None
+        self.db_manager = ResultsDatabaseManager()
 
         # Statistics
         self.strategies_processed = 0
@@ -58,7 +90,7 @@ class FreqTradeOptimizer:
         )
 
         self.logger = logging.getLogger(__name__)
-        self.logger.info("FreqTrade Optimizer initialized")
+        self.logger.info("FreqTrade Optimizer initialized with enhanced database")
 
     def _signal_handler(self, signum, frame):
         """Handle Ctrl+C gracefully."""
@@ -215,7 +247,7 @@ class FreqTradeOptimizer:
                     successful_runs += 1
                     profit_pct = self._extract_profit_from_output(result.stdout)
                     self.logger.info(f"✓ Hyperopt completed for {strategy_name} (Run {run_number}) - "
-                                     f"Profit: {profit_pct:.2f}% - DB record {result.optimization_id}")
+                                     f"Profit: {profit_pct:.2f}% - DB record {result.hyperopt_id}")
                 else:
                     self.logger.error(f"✗ Hyperopt failed for {strategy_name} (Run {run_number}): "
                                       f"{result.error_message}")
@@ -248,8 +280,8 @@ class FreqTradeOptimizer:
 
         # Get top performers from database
         try:
-            if self.executor:
-                best_strategies = self.executor.db_manager.get_best_strategies(limit=5)
+            if self.db_manager:
+                best_strategies = self.db_manager.get_best_hyperopt_strategies(limit=5)
                 if best_strategies:
                     self.logger.info("\nTOP 5 PERFORMERS THIS SESSION:")
                     self.logger.info("-" * 40)
@@ -260,16 +292,19 @@ class FreqTradeOptimizer:
             self.logger.warning(f"Could not retrieve top performers: {e}")
 
         self.logger.info("=" * 60)
-        if self.executor and self.executor.session_id:
-            self.logger.info(f"Session ID: {self.executor.session_id}")
-        self.logger.info("Use the database query tools to analyze results in detail.")
+        if hasattr(self.executor, 'optimization_session_id') and self.executor.optimization_session_id:
+            self.logger.info(f"Session ID: {self.executor.optimization_session_id}")
+        self.logger.info("Use the enhanced analyzer tools to analyze results:")
+        self.logger.info("  python enhanced_analyzer.py best-hyperopt")
+        self.logger.info("  python enhanced_analyzer.py gap")
+        self.logger.info("  python enhanced_analyzer.py report <strategy_name>")
         self.logger.info("=" * 60)
 
     def run(self) -> bool:
-        """Run the complete optimization workflow with database tracking."""
+        """Run the complete optimization workflow with enhanced database tracking."""
         try:
             session_start_time = datetime.now()
-            self.logger.info("Starting FreqTrade optimization process...")
+            self.logger.info("Starting FreqTrade optimization process with enhanced database...")
 
             # Load configuration
             if not self.load_configuration():
@@ -304,7 +339,7 @@ class FreqTradeOptimizer:
 
             # Update session summary
             session_duration = int((datetime.now() - session_start_time).total_seconds())
-            self.executor.db_manager.update_session_summary(
+            self.db_manager.update_optimization_session_summary(
                 session_id,
                 total_strategies,
                 self.strategies_successful,
@@ -324,10 +359,17 @@ class FreqTradeOptimizer:
             self.logger.error(f"Unexpected error during optimization workflow: {e}")
             return False
 
+
 def main():
     """Main entry point of the CLI application."""
-    print("FreqTrade Hyperparameter Optimization Automation")
-    print("=" * 50)
+    print("FreqTrade Hyperparameter Optimization Automation - Enhanced Version")
+    print("=" * 60)
+    print("Features:")
+    print("• Enhanced database with separate hyperopt and backtest tables")
+    print("• Reality gap analysis to detect overfitting")
+    print("• Advanced metrics (Sharpe, Calmar, Sortino ratios)")
+    print("• Session tracking and relationship management")
+    print("=" * 60)
 
     optimizer = FreqTradeOptimizer()
     exit_code = 1  # Default to failure
@@ -335,14 +377,28 @@ def main():
     try:
         if optimizer.run():
             print("\n✓ Optimization workflow completed successfully!")
+            print("\n🔍 Next Steps:")
+            print("1. Analyze results: python enhanced_analyzer.py best-hyperopt")
+            print("2. Run backtests: python backtest_runner.py batch <session_id>")
+            print("3. Check reality gap: python enhanced_analyzer.py gap")
+            print("4. Generate reports: python enhanced_analyzer.py report <strategy>")
             exit_code = 0
         else:
             print("\n✗ Optimization workflow completed with errors.")
+            print("\n💡 Troubleshooting:")
+            print("1. Check logs in the logs/ directory")
+            print("2. Verify FreqTrade installation and configuration")
+            print("3. Ensure strategies are valid and in the correct directory")
 
     except Exception as e:
         print(f"\nFatal error: {e}")
+        print("\n🔧 Recovery options:")
+        print("1. Check database integrity: python database_migration.py --verify-only")
+        print("2. Migrate to enhanced schema: python database_migration.py")
+        print("3. Rollback if needed: python database_migration.py --rollback")
     finally:
         sys.exit(exit_code)
+
 
 if __name__ == "__main__":
     main()

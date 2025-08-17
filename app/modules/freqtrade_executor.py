@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-FreqTrade Command Executor
+FreqTrade Command Executor - Updated for Enhanced Database Structure
 Unified class for executing FreqTrade commands (hyperopt, backtest, download-data)
-with direct database integration.
+with direct database integration using the new enhanced schema.
 """
 
 import os
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from .optimization_config import OptimizationConfig
 from .strategy_config_manager import StrategyConfigManager
-from .results_database_manager import ResultsDatabaseManager, OptimizationResult
+from .results_database_manager import ResultsDatabaseManager, HyperoptResult, BacktestResult
 
 
 @dataclass
@@ -28,14 +28,15 @@ class ExecutionResult:
     stdout: str
     stderr: str
     duration: int
-    optimization_id: Optional[int] = None
+    hyperopt_id: Optional[int] = None
+    backtest_id: Optional[int] = None
     error_message: Optional[str] = None
 
 
 class FreqTradeExecutor:
     """
     Unified command executor for FreqTrade operations.
-    Handles hyperopt, backtest, and data download commands with database integration.
+    Handles hyperopt, backtest, and data download commands with enhanced database integration.
     """
 
     def __init__(self, config: OptimizationConfig = None, logger: logging.Logger = None):
@@ -56,7 +57,8 @@ class FreqTradeExecutor:
 
         # Execution state
         self.current_process: Optional[subprocess.Popen] = None
-        self.session_id: Optional[int] = None
+        self.optimization_session_id: Optional[int] = None
+        self.backtest_session_id: Optional[int] = None
         self.is_running = False
 
         # Callbacks for GUI integration
@@ -85,11 +87,11 @@ class FreqTradeExecutor:
         self.completion_callback = completion_callback
 
     def start_session(self) -> int:
-        """Start a new optimization session."""
+        """Start a new hyperopt optimization session."""
         if not self.config:
             raise ValueError("Configuration required to start session")
 
-        self.session_id = self.db_manager.start_session(
+        self.optimization_session_id = self.db_manager.start_optimization_session(
             exchange_name=self.config.exchange,
             timeframe=self.config.timeframe,
             timerange=self.config.timerange,
@@ -97,8 +99,23 @@ class FreqTradeExecutor:
             epochs=self.config.epochs
         )
 
-        self.logger.info(f"Started optimization session {self.session_id}")
-        return self.session_id
+        self.logger.info(f"Started optimization session {self.optimization_session_id}")
+        return self.optimization_session_id
+
+    def start_backtest_session(self, optimization_session_id: Optional[int] = None) -> int:
+        """Start a new backtest session."""
+        if not self.config:
+            raise ValueError("Configuration required to start backtest session")
+
+        self.backtest_session_id = self.db_manager.start_backtest_session(
+            optimization_session_id=optimization_session_id or self.optimization_session_id,
+            exchange_name=self.config.exchange,
+            timeframe=self.config.timeframe,
+            timerange=self.config.timerange
+        )
+
+        self.logger.info(f"Started backtest session {self.backtest_session_id}")
+        return self.backtest_session_id
 
     def execute_command(self, command: List[str], timeout: int = 3600) -> ExecutionResult:
         """
@@ -264,7 +281,7 @@ class FreqTradeExecutor:
         finally:
             self.is_running = False
             self.current_process = None
-            if self.completion_callback:
+            if self.completion_callback and result:
                 self.completion_callback(result)
 
     def run_hyperopt(self, strategy_name: str, config_file: str = None,
@@ -284,7 +301,7 @@ class FreqTradeExecutor:
             run_number: Run number for this optimization
 
         Returns:
-            ExecutionResult with optimization_id if successful
+            ExecutionResult with hyperopt_id if successful
         """
         try:
             self.logger.info(f"Starting hyperopt for {strategy_name} (Run {run_number})")
@@ -307,7 +324,7 @@ class FreqTradeExecutor:
                 if not self.strategy_config_manager.create_config(strategy_name):
                     raise ValueError(f"Failed to create config for strategy {strategy_name}")
 
-                config_file = f"optimization_results/config_files/{strategy_name}.json"
+                config_file = f"configs/{strategy_name}.json"
 
             # Remove stale lock file
             if self.config:
@@ -340,14 +357,14 @@ class FreqTradeExecutor:
                 return result
 
             # Parse and save results to database
-            optimization_id = self._save_hyperopt_results_to_db(
+            hyperopt_id = self._save_hyperopt_results_to_db(
                 strategy_name, show_result.stdout, config_file,
                 result.duration, run_number
             )
 
-            if optimization_id:
-                result.optimization_id = optimization_id
-                self.logger.info(f"Hyperopt completed for {strategy_name} - DB record {optimization_id}")
+            if hyperopt_id:
+                result.hyperopt_id = hyperopt_id
+                self.logger.info(f"Hyperopt completed for {strategy_name} - DB record {hyperopt_id}")
             else:
                 result.error_message = "Failed to save results to database"
 
@@ -366,7 +383,7 @@ class FreqTradeExecutor:
             )
 
     def run_backtest(self, strategy_name: str, config_file: str,
-                     timerange: str = None) -> ExecutionResult:
+                     timerange: str = None, hyperopt_id: Optional[int] = None) -> ExecutionResult:
         """
         Run backtest for a strategy.
 
@@ -374,6 +391,7 @@ class FreqTradeExecutor:
             strategy_name: Name of the strategy
             config_file: Path to config file
             timerange: Timerange for backtest
+            hyperopt_id: Optional link to hyperopt run that generated this config
 
         Returns:
             ExecutionResult object
@@ -396,7 +414,17 @@ class FreqTradeExecutor:
             result = self.execute_command(command)
 
             if result.success:
-                self.logger.info(f"Backtest completed for {strategy_name}")
+                # Parse and save backtest results
+                backtest_id = self._save_backtest_results_to_db(
+                    strategy_name, result.stdout, config_file,
+                    result.duration, hyperopt_id
+                )
+
+                if backtest_id:
+                    result.backtest_id = backtest_id
+                    self.logger.info(f"Backtest completed for {strategy_name} - DB record {backtest_id}")
+                else:
+                    result.error_message = "Failed to save backtest results to database"
             else:
                 self.logger.error(f"Backtest failed for {strategy_name}")
 
@@ -507,7 +535,7 @@ class FreqTradeExecutor:
     def _save_hyperopt_results_to_db(self, strategy_name: str, hyperopt_output: str,
                                      config_file: str, optimization_duration: int,
                                      run_number: int) -> Optional[int]:
-        """Save hyperopt results to database."""
+        """Save hyperopt results to enhanced database."""
         try:
             # Parse metrics from hyperopt output
             parsed_metrics = self.db_manager.parse_hyperopt_results(hyperopt_output)
@@ -536,8 +564,8 @@ class FreqTradeExecutor:
                 "optimization_duration_seconds": optimization_duration
             })
 
-            # Create OptimizationResult
-            result = OptimizationResult(
+            # Create HyperoptResult
+            result = HyperoptResult(
                 strategy_name=strategy_name,
                 total_profit_pct=parsed_metrics.get('total_profit_pct', 0.0),
                 total_profit_abs=parsed_metrics.get('total_profit_abs', 0.0),
@@ -546,22 +574,102 @@ class FreqTradeExecutor:
                 avg_profit_pct=parsed_metrics.get('avg_profit_pct', 0.0),
                 max_drawdown_pct=parsed_metrics.get('max_drawdown_pct', 0.0),
                 sharpe_ratio=parsed_metrics.get('sharpe_ratio', 0.0),
-                config_data=config_data
+                calmar_ratio=parsed_metrics.get('calmar_ratio', 0.0),
+                sortino_ratio=parsed_metrics.get('sortino_ratio', 0.0),
+                profit_factor=parsed_metrics.get('profit_factor', 0.0),
+                expectancy=parsed_metrics.get('expectancy', 0.0),
+
+                # Configuration details
+                max_open_trades=config_data.get('max_open_trades', 1),
+                timeframe=config_data.get('timeframe', self.config.timeframe if self.config else '5m'),
+                stake_amount=config_data.get('stake_amount', 100.0),
+                stake_currency=config_data.get('stake_currency', 'USDT'),
+                timerange=self.config.timerange if self.config else 'Unknown',
+                pair_whitelist=config_data.get('exchange', {}).get('pair_whitelist', []),
+                exchange_name=config_data.get('exchange', {}).get('name',
+                                                                  self.config.exchange if self.config else 'unknown'),
+
+                # Hyperopt specific
+                hyperopt_function=self.config.hyperfunction if self.config else 'Unknown',
+                epochs=self.config.epochs if self.config else 0,
+                spaces=['buy', 'sell', 'roi', 'stoploss'],  # Default spaces
+
+                # Metadata
+                config_data=config_data,
+                hyperopt_json_data=hyperopt_json_results,
+                optimization_duration=optimization_duration,
+                run_number=run_number
             )
 
             # Save to database
-            optimization_id = self.db_manager.save_optimization_result(result, self.session_id)
-
-            # Save hyperopt JSON separately
-            if optimization_id and self.session_id:
-                self.db_manager.save_hyperopt_json_result(
-                    optimization_id, self.session_id, hyperopt_output
-                )
-
-            return optimization_id
+            hyperopt_id = self.db_manager.save_hyperopt_result(result, self.optimization_session_id)
+            return hyperopt_id
 
         except Exception as e:
             self.logger.error(f"Failed to save hyperopt results to database: {e}")
+            return None
+
+    def _save_backtest_results_to_db(self, strategy_name: str, backtest_output: str,
+                                     config_file: str, backtest_duration: int,
+                                     hyperopt_id: Optional[int] = None) -> Optional[int]:
+        """Save backtest results to enhanced database."""
+        try:
+            # Parse metrics from backtest output
+            parsed_metrics = self.db_manager.parse_backtest_results(backtest_output)
+
+            # Load config data
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+
+            # Create BacktestResult
+            result = BacktestResult(
+                strategy_name=strategy_name,
+                total_profit_pct=parsed_metrics.get('total_profit_pct', 0.0),
+                total_profit_abs=parsed_metrics.get('total_profit_abs', 0.0),
+                total_trades=parsed_metrics.get('total_trades', 0),
+                win_rate=parsed_metrics.get('win_rate', 0.0),
+                avg_profit_pct=parsed_metrics.get('avg_profit_pct', 0.0),
+                max_drawdown_pct=parsed_metrics.get('max_drawdown_pct', 0.0),
+                max_drawdown_abs=parsed_metrics.get('max_drawdown_abs', 0.0),
+
+                # Advanced metrics
+                sharpe_ratio=parsed_metrics.get('sharpe_ratio', 0.0),
+                calmar_ratio=parsed_metrics.get('calmar_ratio', 0.0),
+                sortino_ratio=parsed_metrics.get('sortino_ratio', 0.0),
+                profit_factor=parsed_metrics.get('profit_factor', 0.0),
+                expectancy=parsed_metrics.get('expectancy', 0.0),
+
+                # Trade statistics
+                winning_trades=parsed_metrics.get('winning_trades', 0),
+                losing_trades=parsed_metrics.get('losing_trades', 0),
+                draw_trades=parsed_metrics.get('draw_trades', 0),
+                best_trade_pct=parsed_metrics.get('best_trade_pct', 0.0),
+                worst_trade_pct=parsed_metrics.get('worst_trade_pct', 0.0),
+                avg_trade_duration=parsed_metrics.get('avg_trade_duration', 'Unknown'),
+
+                # Configuration
+                max_open_trades=config_data.get('max_open_trades', 1),
+                timeframe=config_data.get('timeframe', self.config.timeframe if self.config else '5m'),
+                stake_amount=config_data.get('stake_amount', 100.0),
+                stake_currency=config_data.get('stake_currency', 'USDT'),
+                timerange=self.config.timerange if self.config else 'Unknown',
+                pair_whitelist=config_data.get('exchange', {}).get('pair_whitelist', []),
+                exchange_name=config_data.get('exchange', {}).get('name',
+                                                                  self.config.exchange if self.config else 'unknown'),
+
+                # File references and metadata
+                config_data=config_data,
+                backtest_results={"raw_output": backtest_output},
+                backtest_duration=backtest_duration,
+                hyperopt_id=hyperopt_id
+            )
+
+            # Save to database
+            backtest_id = self.db_manager.save_backtest_result(result, self.backtest_session_id)
+            return backtest_id
+
+        except Exception as e:
+            self.logger.error(f"Failed to save backtest results to database: {e}")
             return None
 
     def _notify_progress(self, message: str):
