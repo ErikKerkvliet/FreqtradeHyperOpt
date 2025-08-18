@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced Database Manager for FreqTrade Results
-Restructured to separate hyperopt runs and backtest runs into dedicated tables.
+Database Manager for FreqTrade Results
+Structured to separate hyperopt runs and backtest runs into dedicated tables.
 """
 
 import sqlite3
@@ -77,15 +77,14 @@ class BacktestResult(TradingResult):
     hyperopt_id: Optional[int] = None
 
 
-class ResultsDatabaseManager:
+class DatabaseManager:
     """
-    Enhanced database manager with separate tables for hyperopt and backtest results.
-    Maintains relationships between optimization and validation runs.
+    Simplified database manager with only two main tables.
     """
 
     def __init__(self, db_path: str = "freqtrade_results.db"):
         """
-        Initialize the enhanced database manager.
+        Initialize the simplified database manager.
 
         Args:
             db_path: Path to SQLite database file
@@ -95,7 +94,7 @@ class ResultsDatabaseManager:
         self._init_database()
 
     def _init_database(self) -> None:
-        """Initialize the database with the new enhanced schema."""
+        """Initialize the database with the simplified two-table schema."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 # Enable foreign keys
@@ -103,10 +102,13 @@ class ResultsDatabaseManager:
 
                 # Create hyperopt results table
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS hyperopt_runs (
+                    CREATE TABLE IF NOT EXISTS hyperopt_results (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                        -- Basic info
                         strategy_name VARCHAR(100) NOT NULL,
-                        hyperopt_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        status VARCHAR(20) DEFAULT 'completed',
 
                         -- Configuration
                         max_open_trades INTEGER,
@@ -114,13 +116,14 @@ class ResultsDatabaseManager:
                         stake_amount DECIMAL(10, 8),
                         stake_currency VARCHAR(10),
                         timerange VARCHAR(50),
-                        pair_whitelist TEXT,
+                        pair_whitelist TEXT,  -- JSON array
                         exchange_name VARCHAR(50),
 
                         -- Hyperopt Settings
                         hyperopt_function VARCHAR(100),
                         epochs INTEGER,
                         spaces TEXT,  -- JSON array of spaces
+                        run_number INTEGER DEFAULT 1,
 
                         -- Performance Metrics
                         total_profit_pct DECIMAL(10, 4),
@@ -137,26 +140,33 @@ class ResultsDatabaseManager:
                         profit_factor DECIMAL(10, 4),
                         expectancy DECIMAL(10, 6),
 
-                        -- File References
+                        -- Trade Statistics (from hyperopt)
+                        winning_trades INTEGER,
+                        losing_trades INTEGER,
+                        draw_trades INTEGER,
+
+                        -- File References and Raw Data
                         config_file_path VARCHAR(255),
                         hyperopt_result_file_path VARCHAR(255),
+                        config_json TEXT,  -- Full config as JSON
+                        hyperopt_json TEXT,  -- Full hyperopt result as JSON
+                        raw_output TEXT,  -- Raw command output
 
                         -- Meta Information
                         optimization_duration_seconds INTEGER,
-                        run_number INTEGER DEFAULT 1,
-                        session_id INTEGER,
-                        status VARCHAR(20) DEFAULT 'completed',
-
-                        FOREIGN KEY (session_id) REFERENCES optimization_sessions(id)
+                        session_info TEXT  -- JSON with session metadata
                     )
                 """)
 
                 # Create backtest results table
                 conn.execute("""
-                    CREATE TABLE IF NOT EXISTS backtest_runs (
+                    CREATE TABLE IF NOT EXISTS backtest_results (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                        -- Basic info
                         strategy_name VARCHAR(100) NOT NULL,
-                        backtest_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        status VARCHAR(20) DEFAULT 'completed',
 
                         -- Configuration
                         max_open_trades INTEGER,
@@ -164,7 +174,7 @@ class ResultsDatabaseManager:
                         stake_amount DECIMAL(10, 8),
                         stake_currency VARCHAR(10),
                         timerange VARCHAR(50),
-                        pair_whitelist TEXT,
+                        pair_whitelist TEXT,  -- JSON array
                         exchange_name VARCHAR(50),
 
                         -- Performance Metrics
@@ -191,163 +201,50 @@ class ResultsDatabaseManager:
                         worst_trade_pct DECIMAL(10, 4),
                         avg_trade_duration VARCHAR(50),
 
-                        -- File References
+                        -- File References and Raw Data
                         config_file_path VARCHAR(255),
                         backtest_result_file_path VARCHAR(255),
+                        config_json TEXT,  -- Full config as JSON
+                        backtest_json TEXT,  -- Full backtest result as JSON
+                        raw_output TEXT,  -- Raw command output
+                        trades_json TEXT,  -- Individual trades as JSON (optional)
 
                         -- Meta Information
                         backtest_duration_seconds INTEGER,
-                        status VARCHAR(20) DEFAULT 'completed',
-                        hyperopt_id INTEGER,  -- Link to hyperopt run that generated this config
-                        session_id INTEGER,   -- Link to backtest session
+                        hyperopt_id INTEGER,  -- Optional link to hyperopt result
+                        session_info TEXT,  -- JSON with session metadata
 
-                        FOREIGN KEY (hyperopt_id) REFERENCES hyperopt_runs(id),
-                        FOREIGN KEY (session_id) REFERENCES backtest_sessions(id)
-                    )
-                """)
-
-                # Create detailed trade records table (optional for detailed analysis)
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS backtest_trades (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        backtest_id INTEGER NOT NULL,
-                        pair VARCHAR(20) NOT NULL,
-
-                        open_timestamp DATETIME,
-                        close_timestamp DATETIME,
-                        open_rate DECIMAL(15, 8),
-                        close_rate DECIMAL(15, 8),
-                        amount DECIMAL(15, 8),
-
-                        profit_pct DECIMAL(10, 4),
-                        profit_abs DECIMAL(15, 8),
-                        trade_duration INTEGER,  -- in minutes
-
-                        exit_reason VARCHAR(50),
-                        is_open BOOLEAN DEFAULT FALSE,
-
-                        FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
-                    )
-                """)
-
-                # Sessions table for hyperopt
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS optimization_sessions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        session_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        total_strategies INTEGER,
-                        successful_strategies INTEGER,
-                        failed_strategies INTEGER,
-                        session_duration_seconds INTEGER,
-
-                        exchange_name VARCHAR(50),
-                        timeframe VARCHAR(10),
-                        timerange VARCHAR(50),
-                        hyperopt_function VARCHAR(100),
-                        epochs INTEGER
-                    )
-                """)
-
-                # Sessions table for backtests
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS backtest_sessions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        session_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        total_strategies INTEGER,
-                        successful_backtests INTEGER,
-                        failed_backtests INTEGER,
-                        session_duration_seconds INTEGER,
-
-                        exchange_name VARCHAR(50),
-                        timeframe VARCHAR(10),
-                        timerange VARCHAR(50),
-
-                        optimization_session_id INTEGER,  -- Link to related optimization session
-                        FOREIGN KEY (optimization_session_id) REFERENCES optimization_sessions(id)
+                        FOREIGN KEY (hyperopt_id) REFERENCES hyperopt_results(id)
                     )
                 """)
 
                 # Create indexes for better performance
                 indexes = [
                     # Hyperopt indexes
-                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_strategy_profit ON hyperopt_runs(strategy_name, total_profit_pct)",
-                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_timeframe_profit ON hyperopt_runs(timeframe, total_profit_pct)",
-                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_timestamp ON hyperopt_runs(hyperopt_timestamp)",
-                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_session ON hyperopt_runs(session_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_strategy_profit ON hyperopt_results(strategy_name, total_profit_pct)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_timeframe_profit ON hyperopt_results(timeframe, total_profit_pct)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_timestamp ON hyperopt_results(timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_hyperopt_status ON hyperopt_results(status)",
 
                     # Backtest indexes
-                    "CREATE INDEX IF NOT EXISTS idx_backtest_strategy_profit ON backtest_runs(strategy_name, total_profit_pct)",
-                    "CREATE INDEX IF NOT EXISTS idx_backtest_timeframe_profit ON backtest_runs(timeframe, total_profit_pct)",
-                    "CREATE INDEX IF NOT EXISTS idx_backtest_timestamp ON backtest_runs(backtest_timestamp)",
-                    "CREATE INDEX IF NOT EXISTS idx_backtest_hyperopt ON backtest_runs(hyperopt_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_backtest_session ON backtest_runs(session_id)",
-
-                    # Trade indexes
-                    "CREATE INDEX IF NOT EXISTS idx_trades_backtest ON backtest_trades(backtest_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_trades_pair ON backtest_trades(pair)",
-                    "CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON backtest_trades(open_timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_backtest_strategy_profit ON backtest_results(strategy_name, total_profit_pct)",
+                    "CREATE INDEX IF NOT EXISTS idx_backtest_timeframe_profit ON backtest_results(timeframe, total_profit_pct)",
+                    "CREATE INDEX IF NOT EXISTS idx_backtest_timestamp ON backtest_results(timestamp)",
+                    "CREATE INDEX IF NOT EXISTS idx_backtest_hyperopt ON backtest_results(hyperopt_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_backtest_status ON backtest_results(status)",
                 ]
 
                 for index_sql in indexes:
                     conn.execute(index_sql)
 
                 conn.commit()
-                self.logger.info(f"Enhanced database initialized: {self.db_path}")
+                self.logger.info(f"Simplified database initialized: {self.db_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
             raise
 
-    def start_optimization_session(self, **session_config) -> int:
-        """Start a new hyperopt optimization session."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("""
-                    INSERT INTO optimization_sessions 
-                    (exchange_name, timeframe, timerange, hyperopt_function, epochs)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    session_config.get('exchange_name'),
-                    session_config.get('timeframe'),
-                    session_config.get('timerange'),
-                    session_config.get('hyperopt_function'),
-                    session_config.get('epochs')
-                ))
-                session_id = cursor.lastrowid
-                conn.commit()
-
-                self.logger.info(f"Started optimization session {session_id}")
-                return session_id
-
-        except Exception as e:
-            self.logger.error(f"Failed to start optimization session: {e}")
-            raise
-
-    def start_backtest_session(self, optimization_session_id: Optional[int] = None, **session_config) -> int:
-        """Start a new backtest session."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("""
-                    INSERT INTO backtest_sessions 
-                    (exchange_name, timeframe, timerange, optimization_session_id)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    session_config.get('exchange_name'),
-                    session_config.get('timeframe'),
-                    session_config.get('timerange'),
-                    optimization_session_id
-                ))
-                session_id = cursor.lastrowid
-                conn.commit()
-
-                self.logger.info(f"Started backtest session {session_id}")
-                return session_id
-
-        except Exception as e:
-            self.logger.error(f"Failed to start backtest session: {e}")
-            raise
-
-    def save_hyperopt_result(self, result: HyperoptResult, session_id: Optional[int] = None) -> int:
+    def save_hyperopt_result(self, result: HyperoptResult, session_info: Optional[Dict] = None) -> int:
         """Save hyperopt result to database."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -373,24 +270,31 @@ class ResultsDatabaseManager:
             # Insert into database
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    INSERT INTO hyperopt_runs (
+                    INSERT INTO hyperopt_results (
                         strategy_name, max_open_trades, timeframe, stake_amount, stake_currency,
                         timerange, pair_whitelist, exchange_name, hyperopt_function, epochs, spaces,
-                        total_profit_pct, total_profit_abs, total_trades, win_rate, avg_profit_pct,
-                        max_drawdown_pct, sharpe_ratio, calmar_ratio, sortino_ratio, profit_factor,
-                        expectancy, config_file_path, hyperopt_result_file_path,
-                        optimization_duration_seconds, run_number, session_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        run_number, total_profit_pct, total_profit_abs, total_trades, win_rate, 
+                        avg_profit_pct, max_drawdown_pct, sharpe_ratio, calmar_ratio, sortino_ratio, 
+                        profit_factor, expectancy, winning_trades, losing_trades, draw_trades,
+                        config_file_path, hyperopt_result_file_path, config_json, hyperopt_json,
+                        optimization_duration_seconds, session_info
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     result.strategy_name, result.max_open_trades, result.timeframe,
                     result.stake_amount, result.stake_currency, result.timerange,
                     json.dumps(result.pair_whitelist), result.exchange_name,
                     result.hyperopt_function, result.epochs, json.dumps(result.spaces),
-                    result.total_profit_pct, result.total_profit_abs, result.total_trades,
-                    result.win_rate, result.avg_profit_pct, result.max_drawdown_pct,
-                    result.sharpe_ratio, result.calmar_ratio, result.sortino_ratio,
-                    result.profit_factor, result.expectancy, str(config_path), str(hyperopt_path),
-                    result.optimization_duration, result.run_number, session_id
+                    result.run_number, result.total_profit_pct, result.total_profit_abs,
+                    result.total_trades, result.win_rate, result.avg_profit_pct,
+                    result.max_drawdown_pct, result.sharpe_ratio, result.calmar_ratio,
+                    result.sortino_ratio, result.profit_factor, result.expectancy,
+                    # Extract trade stats from hyperopt data if available
+                    result.hyperopt_json_data.get('winning_trades', 0),
+                    result.hyperopt_json_data.get('losing_trades', 0),
+                    result.hyperopt_json_data.get('draw_trades', 0),
+                    str(config_path), str(hyperopt_path),
+                    json.dumps(result.config_data), json.dumps(result.hyperopt_json_data),
+                    result.optimization_duration, json.dumps(session_info) if session_info else None
                 ))
 
                 hyperopt_id = cursor.lastrowid
@@ -403,7 +307,7 @@ class ResultsDatabaseManager:
             self.logger.error(f"Failed to save hyperopt result: {e}")
             raise
 
-    def save_backtest_result(self, result: BacktestResult, session_id: Optional[int] = None) -> int:
+    def save_backtest_result(self, result: BacktestResult, session_info: Optional[Dict] = None) -> int:
         """Save backtest result to database."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -429,15 +333,15 @@ class ResultsDatabaseManager:
             # Insert into database
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    INSERT INTO backtest_runs (
+                    INSERT INTO backtest_results (
                         strategy_name, max_open_trades, timeframe, stake_amount, stake_currency,
                         timerange, pair_whitelist, exchange_name, total_profit_pct, total_profit_abs,
                         total_trades, win_rate, avg_profit_pct, max_drawdown_pct, max_drawdown_abs,
                         sharpe_ratio, calmar_ratio, sortino_ratio, profit_factor, expectancy,
                         winning_trades, losing_trades, draw_trades, best_trade_pct, worst_trade_pct,
                         avg_trade_duration, config_file_path, backtest_result_file_path,
-                        backtest_duration_seconds, hyperopt_id, session_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        config_json, backtest_json, backtest_duration_seconds, hyperopt_id, session_info
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     result.strategy_name, result.max_open_trades, result.timeframe,
                     result.stake_amount, result.stake_currency, result.timerange,
@@ -448,8 +352,10 @@ class ResultsDatabaseManager:
                     result.sortino_ratio, result.profit_factor, result.expectancy,
                     result.winning_trades, result.losing_trades, result.draw_trades,
                     result.best_trade_pct, result.worst_trade_pct, result.avg_trade_duration,
-                    str(config_path), str(backtest_path), result.backtest_duration,
-                    result.hyperopt_id, session_id
+                    str(config_path), str(backtest_path),
+                    json.dumps(result.config_data), json.dumps(result.backtest_results),
+                    result.backtest_duration, result.hyperopt_id,
+                    json.dumps(session_info) if session_info else None
                 ))
 
                 backtest_id = cursor.lastrowid
@@ -466,7 +372,7 @@ class ResultsDatabaseManager:
         """Get the best performing hyperopt strategies."""
         try:
             query = """
-                SELECT * FROM hyperopt_runs 
+                SELECT * FROM hyperopt_results 
                 WHERE status = 'completed'
             """
             params = []
@@ -493,7 +399,7 @@ class ResultsDatabaseManager:
         """Get the best performing backtest strategies."""
         try:
             query = """
-                SELECT * FROM backtest_runs 
+                SELECT * FROM backtest_results 
                 WHERE status = 'completed'
             """
             params = []
@@ -528,7 +434,7 @@ class ResultsDatabaseManager:
                     h.win_rate as hyperopt_win_rate,
                     h.max_drawdown_pct as hyperopt_drawdown,
                     h.sharpe_ratio as hyperopt_sharpe,
-                    h.hyperopt_timestamp,
+                    h.timestamp as hyperopt_timestamp,
 
                     b.id as backtest_id,
                     b.total_profit_pct as backtest_profit,
@@ -536,12 +442,12 @@ class ResultsDatabaseManager:
                     b.win_rate as backtest_win_rate,
                     b.max_drawdown_pct as backtest_drawdown,
                     b.sharpe_ratio as backtest_sharpe,
-                    b.backtest_timestamp,
+                    b.timestamp as backtest_timestamp,
 
-                    (h.total_profit_pct - b.total_profit_pct) as reality_gap_pct
+                    (h.total_profit_pct - COALESCE(b.total_profit_pct, 0)) as reality_gap_pct
 
-                FROM hyperopt_runs h
-                LEFT JOIN backtest_runs b ON h.id = b.hyperopt_id
+                FROM hyperopt_results h
+                LEFT JOIN backtest_results b ON h.id = b.hyperopt_id
                 WHERE h.status = 'completed'
             """
             params = []
@@ -563,194 +469,140 @@ class ResultsDatabaseManager:
             self.logger.error(f"Failed to get optimization vs backtest comparison: {e}")
             return []
 
-    def save_backtest_trades(self, backtest_id: int, trades: List[Dict]) -> None:
-        """Save individual trade records for detailed analysis."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                for trade in trades:
-                    conn.execute("""
-                        INSERT INTO backtest_trades (
-                            backtest_id, pair, open_timestamp, close_timestamp,
-                            open_rate, close_rate, amount, profit_pct, profit_abs,
-                            trade_duration, exit_reason, is_open
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        backtest_id, trade['pair'], trade['open_timestamp'], trade['close_timestamp'],
-                        trade['open_rate'], trade['close_rate'], trade['amount'],
-                        trade['profit_pct'], trade['profit_abs'], trade['trade_duration'],
-                        trade['exit_reason'], trade.get('is_open', False)
-                    ))
-
-                conn.commit()
-                self.logger.info(f"Saved {len(trades)} trade records for backtest {backtest_id}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to save backtest trades: {e}")
-
-    def get_backtest_trade_analysis(self, backtest_id: int) -> Dict[str, Any]:
-        """Get detailed trade analysis for a backtest."""
+    def get_strategy_timeline(self, strategy_name: str) -> List[Dict]:
+        """Get performance timeline for a specific strategy across optimizations and backtests."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
 
-                # Get trade statistics
+                # Get combined timeline
                 cursor = conn.execute("""
-                    SELECT 
-                        COUNT(*) as total_trades,
-                        AVG(profit_pct) as avg_profit_pct,
-                        SUM(profit_abs) as total_profit_abs,
-                        AVG(trade_duration) as avg_duration_minutes,
-                        MIN(profit_pct) as worst_trade_pct,
-                        MAX(profit_pct) as best_trade_pct
-                    FROM backtest_trades
-                    WHERE backtest_id = ?
+                    SELECT 'hyperopt' as type, id, timestamp, 
+                           total_profit_pct, total_trades, sharpe_ratio, run_number,
+                           epochs, hyperopt_function as details
+                    FROM hyperopt_results 
+                    WHERE strategy_name = ? AND status = 'completed'
+
+                    UNION ALL
+
+                    SELECT 'backtest' as type, id, timestamp,
+                           total_profit_pct, total_trades, sharpe_ratio, 
+                           hyperopt_id as run_number, backtest_duration_seconds as epochs,
+                           'Backtest validation' as details
+                    FROM backtest_results 
+                    WHERE strategy_name = ? AND status = 'completed'
+
+                    ORDER BY timestamp DESC
+                """, (strategy_name, strategy_name))
+
+                results = [dict(row) for row in cursor.fetchall()]
+                return results
+
+        except Exception as e:
+            self.logger.error(f"Failed to get strategy timeline: {e}")
+            return []
+
+    def get_hyperopt_json_result(self, hyperopt_id: int) -> Optional[Dict]:
+        """Get hyperopt JSON result for a specific hyperopt run."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT hyperopt_json FROM hyperopt_results WHERE id = ?
+                """, (hyperopt_id,))
+
+                result = cursor.fetchone()
+                if result and result[0]:
+                    return json.loads(result[0])
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Failed to get hyperopt JSON result: {e}")
+            return None
+
+    def get_backtest_trades_from_json(self, backtest_id: int) -> List[Dict]:
+        """Get individual trades from backtest JSON data."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT trades_json FROM backtest_results WHERE id = ?
                 """, (backtest_id,))
 
-                trade_stats = dict(cursor.fetchone())
+                result = cursor.fetchone()
+                if result and result[0]:
+                    return json.loads(result[0])
+                return []
 
-                # Get trades by pair
+        except Exception as e:
+            self.logger.error(f"Failed to get backtest trades: {e}")
+            return []
+
+    def save_backtest_trades_json(self, backtest_id: int, trades: List[Dict]) -> None:
+        """Save individual trade records as JSON for detailed analysis."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE backtest_results 
+                    SET trades_json = ?
+                    WHERE id = ?
+                """, (json.dumps(trades), backtest_id))
+
+                conn.commit()
+                self.logger.info(f"Saved {len(trades)} trade records as JSON for backtest {backtest_id}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save backtest trades JSON: {e}")
+
+    def get_stats_summary(self) -> Dict[str, Any]:
+        """Get overall database statistics."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Hyperopt stats
                 cursor = conn.execute("""
                     SELECT 
-                        pair,
-                        COUNT(*) as trade_count,
-                        AVG(profit_pct) as avg_profit_pct,
-                        SUM(profit_abs) as total_profit
-                    FROM backtest_trades
-                    WHERE backtest_id = ?
-                    GROUP BY pair
-                    ORDER BY total_profit DESC
-                """, (backtest_id,))
+                        COUNT(*) as total_hyperopt,
+                        COUNT(DISTINCT strategy_name) as unique_strategies_hyperopt,
+                        AVG(total_profit_pct) as avg_profit_hyperopt,
+                        MAX(total_profit_pct) as max_profit_hyperopt,
+                        MIN(total_profit_pct) as min_profit_hyperopt
+                    FROM hyperopt_results 
+                    WHERE status = 'completed'
+                """)
+                hyperopt_stats = dict(cursor.fetchone())
 
-                trades_by_pair = [dict(row) for row in cursor.fetchall()]
-
-                # Get exit reasons
+                # Backtest stats
                 cursor = conn.execute("""
                     SELECT 
-                        exit_reason,
-                        COUNT(*) as count,
-                        AVG(profit_pct) as avg_profit_pct
-                    FROM backtest_trades
-                    WHERE backtest_id = ?
-                    GROUP BY exit_reason
-                    ORDER BY count DESC
-                """, (backtest_id,))
+                        COUNT(*) as total_backtest,
+                        COUNT(DISTINCT strategy_name) as unique_strategies_backtest,
+                        AVG(total_profit_pct) as avg_profit_backtest,
+                        MAX(total_profit_pct) as max_profit_backtest,
+                        MIN(total_profit_pct) as min_profit_backtest,
+                        COUNT(hyperopt_id) as linked_to_hyperopt
+                    FROM backtest_results 
+                    WHERE status = 'completed'
+                """)
+                backtest_stats = dict(cursor.fetchone())
 
-                exit_reasons = [dict(row) for row in cursor.fetchall()]
+                # Reality gap stats
+                cursor = conn.execute("""
+                    SELECT 
+                        AVG(h.total_profit_pct - b.total_profit_pct) as avg_reality_gap,
+                        COUNT(*) as compared_pairs
+                    FROM hyperopt_results h
+                    JOIN backtest_results b ON h.id = b.hyperopt_id
+                    WHERE h.status = 'completed' AND b.status = 'completed'
+                """)
+                gap_stats = dict(cursor.fetchone())
 
                 return {
-                    'trade_stats': trade_stats,
-                    'trades_by_pair': trades_by_pair,
-                    'exit_reasons': exit_reasons
+                    'hyperopt': hyperopt_stats,
+                    'backtest': backtest_stats,
+                    'reality_gap': gap_stats
                 }
 
         except Exception as e:
-            self.logger.error(f"Failed to get backtest trade analysis: {e}")
+            self.logger.error(f"Failed to get stats summary: {e}")
             return {}
-
-    def update_optimization_session_summary(self, session_id: int, total_strategies: int,
-                                            successful_strategies: int, failed_strategies: int,
-                                            session_duration: int) -> None:
-        """Update optimization session summary."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    UPDATE optimization_sessions 
-                    SET total_strategies = ?, successful_strategies = ?, 
-                        failed_strategies = ?, session_duration_seconds = ?
-                    WHERE id = ?
-                """, (total_strategies, successful_strategies, failed_strategies,
-                      session_duration, session_id))
-                conn.commit()
-
-        except Exception as e:
-            self.logger.error(f"Failed to update optimization session summary: {e}")
-
-    def update_backtest_session_summary(self, session_id: int, total_strategies: int,
-                                        successful_backtests: int, failed_backtests: int,
-                                        session_duration: int) -> None:
-        """Update backtest session summary."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    UPDATE backtest_sessions 
-                    SET total_strategies = ?, successful_backtests = ?, 
-                        failed_backtests = ?, session_duration_seconds = ?
-                    WHERE id = ?
-                """, (total_strategies, successful_backtests, failed_backtests,
-                      session_duration, session_id))
-                conn.commit()
-
-        except Exception as e:
-            self.logger.error(f"Failed to update backtest session summary: {e}")
-
-    def migrate_from_old_schema(self) -> bool:
-        """
-        Migrate data from the old schema to the new enhanced schema.
-        This method helps transition existing data to the new structure.
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Check if old table exists
-                cursor = conn.execute("""
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' AND name='strategy_optimizations'
-                """)
-
-                if not cursor.fetchone():
-                    self.logger.info("No old schema found, skipping migration")
-                    return True
-
-                self.logger.info("Migrating data from old schema...")
-
-                # Migrate optimization data to hyperopt_runs
-                cursor = conn.execute("""
-                    INSERT INTO hyperopt_runs (
-                        strategy_name, hyperopt_timestamp, max_open_trades, timeframe,
-                        stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
-                        hyperopt_function, epochs, total_profit_pct, total_profit_abs,
-                        total_trades, win_rate, avg_profit_pct, max_drawdown_pct,
-                        sharpe_ratio, config_file_path, hyperopt_result_file_path,
-                        optimization_duration_seconds, run_number, session_id, status
-                    )
-                    SELECT 
-                        strategy_name, optimization_timestamp, max_open_trades, timeframe,
-                        stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
-                        hyperopt_function, epochs, total_profit_pct, total_profit_abs,
-                        total_trades, win_rate, avg_profit_pct, max_drawdown_pct,
-                        COALESCE(sharpe_ratio, 0), config_file_path, hyperopt_result_file_path,
-                        optimization_duration_seconds, COALESCE(run_number, 1), 
-                        (SELECT session_id FROM session_strategies WHERE optimization_id = strategy_optimizations.id LIMIT 1),
-                        COALESCE(status, 'completed')
-                    FROM strategy_optimizations
-                """)
-
-                migrated_count = cursor.rowcount
-                self.logger.info(f"Migrated {migrated_count} optimization records")
-
-                # Migrate hyperopt JSON results if they exist
-                cursor = conn.execute("""
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' AND name='hyperopt_json_results'
-                """)
-
-                if cursor.fetchone():
-                    # Update hyperopt_runs with JSON data references
-                    conn.execute("""
-                        UPDATE hyperopt_runs 
-                        SET hyperopt_result_file_path = COALESCE(hyperopt_result_file_path, 
-                            'migrated_from_json_table_id_' || 
-                            (SELECT id FROM hyperopt_json_results WHERE optimization_id = hyperopt_runs.id LIMIT 1)
-                        )
-                        WHERE hyperopt_result_file_path IS NULL
-                    """)
-
-                conn.commit()
-                self.logger.info("Migration completed successfully")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Migration failed: {e}")
-            return False
 
     def parse_hyperopt_results(self, hyperopt_output: str) -> Dict[str, Any]:
         """Parse hyperopt output to extract key metrics."""
@@ -924,3 +776,117 @@ class ResultsDatabaseManager:
             self.logger.warning(f"Error parsing backtest results: {e}")
 
         return results
+
+    def migrate_from_old_schema(self) -> bool:
+        """
+        Migrate data from the old complex schema to the new simplified schema.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if old tables exist
+                cursor = conn.execute("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name IN ('hyperopt_runs', 'backtest_runs', 'strategy_optimizations')
+                """)
+
+                old_tables = [row[0] for row in cursor.fetchall()]
+
+                if not old_tables:
+                    self.logger.info("No old schema found, skipping migration")
+                    return True
+
+                self.logger.info(f"Migrating data from old schema tables: {old_tables}")
+
+                # Migrate from hyperopt_runs if it exists
+                if 'hyperopt_runs' in old_tables:
+                    cursor = conn.execute("""
+                        INSERT INTO hyperopt_results (
+                            strategy_name, timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            hyperopt_function, epochs, spaces, run_number, total_profit_pct, 
+                            total_profit_abs, total_trades, win_rate, avg_profit_pct, 
+                            max_drawdown_pct, sharpe_ratio, calmar_ratio, sortino_ratio, 
+                            profit_factor, expectancy, winning_trades, losing_trades, 
+                            draw_trades, config_file_path, hyperopt_result_file_path,
+                            optimization_duration_seconds, status
+                        )
+                        SELECT 
+                            strategy_name, hyperopt_timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            hyperopt_function, epochs, spaces, run_number, total_profit_pct,
+                            total_profit_abs, total_trades, win_rate, avg_profit_pct,
+                            max_drawdown_pct, COALESCE(sharpe_ratio, 0), COALESCE(calmar_ratio, 0), 
+                            COALESCE(sortino_ratio, 0), COALESCE(profit_factor, 0), COALESCE(expectancy, 0),
+                            COALESCE(winning_trades, 0), COALESCE(losing_trades, 0), COALESCE(draw_trades, 0),
+                            config_file_path, hyperopt_result_file_path,
+                            optimization_duration_seconds, COALESCE(status, 'completed')
+                        FROM hyperopt_runs
+                    """)
+
+                    hyperopt_migrated = cursor.rowcount
+                    self.logger.info(f"Migrated {hyperopt_migrated} hyperopt records")
+
+                # Migrate from backtest_runs if it exists
+                if 'backtest_runs' in old_tables:
+                    cursor = conn.execute("""
+                        INSERT INTO backtest_results (
+                            strategy_name, timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            total_profit_pct, total_profit_abs, total_trades, win_rate, 
+                            avg_profit_pct, max_drawdown_pct, max_drawdown_abs,
+                            sharpe_ratio, calmar_ratio, sortino_ratio, profit_factor, expectancy,
+                            winning_trades, losing_trades, draw_trades, best_trade_pct, 
+                            worst_trade_pct, avg_trade_duration, config_file_path, 
+                            backtest_result_file_path, backtest_duration_seconds, 
+                            hyperopt_id, status
+                        )
+                        SELECT 
+                            strategy_name, backtest_timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            total_profit_pct, total_profit_abs, total_trades, win_rate,
+                            avg_profit_pct, max_drawdown_pct, COALESCE(max_drawdown_abs, 0),
+                            COALESCE(sharpe_ratio, 0), COALESCE(calmar_ratio, 0), 
+                            COALESCE(sortino_ratio, 0), COALESCE(profit_factor, 0), COALESCE(expectancy, 0),
+                            COALESCE(winning_trades, 0), COALESCE(losing_trades, 0), COALESCE(draw_trades, 0),
+                            COALESCE(best_trade_pct, 0), COALESCE(worst_trade_pct, 0), 
+                            COALESCE(avg_trade_duration, '0 days'), config_file_path,
+                            backtest_result_file_path, backtest_duration_seconds,
+                            hyperopt_id, COALESCE(status, 'completed')
+                        FROM backtest_runs
+                    """)
+
+                    backtest_migrated = cursor.rowcount
+                    self.logger.info(f"Migrated {backtest_migrated} backtest records")
+
+                # Migrate from old strategy_optimizations table if it exists
+                if 'strategy_optimizations' in old_tables and 'hyperopt_runs' not in old_tables:
+                    cursor = conn.execute("""
+                        INSERT INTO hyperopt_results (
+                            strategy_name, timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            hyperopt_function, epochs, total_profit_pct, total_profit_abs,
+                            total_trades, win_rate, avg_profit_pct, max_drawdown_pct,
+                            sharpe_ratio, config_file_path, hyperopt_result_file_path,
+                            optimization_duration_seconds, run_number, status
+                        )
+                        SELECT 
+                            strategy_name, optimization_timestamp, max_open_trades, timeframe,
+                            stake_amount, stake_currency, timerange, pair_whitelist, exchange_name,
+                            hyperopt_function, epochs, total_profit_pct, total_profit_abs,
+                            total_trades, win_rate, avg_profit_pct, max_drawdown_pct,
+                            COALESCE(sharpe_ratio, 0), config_file_path, hyperopt_result_file_path,
+                            optimization_duration_seconds, COALESCE(run_number, 1), 
+                            COALESCE(status, 'completed')
+                        FROM strategy_optimizations
+                    """)
+
+                    legacy_migrated = cursor.rowcount
+                    self.logger.info(f"Migrated {legacy_migrated} legacy optimization records")
+
+                conn.commit()
+                self.logger.info("Migration completed successfully")
+                return True
+
+        except Exception as e:
+            self.logger.error(f"Migration failed: {e}")
+            return False

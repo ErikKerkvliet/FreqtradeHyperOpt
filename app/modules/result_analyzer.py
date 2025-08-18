@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced FreqTrade Results Analyzer
-CLI tool for analyzing the new separated hyperopt and backtest results.
+Simplified FreqTrade Results Analyzer
+CLI tool for analyzing the simplified two-table database structure.
 """
 
 import argparse
@@ -10,16 +10,16 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 from tabulate import tabulate
-from results_database_manager import ResultsDatabaseManager
+from results_database_manager import DatabaseManager
 
 
-class EnhancedResultsAnalyzer:
+class SimplifiedResultsAnalyzer:
     """
-    Enhanced analyzer for the new database schema with separate hyperopt and backtest tables.
+    Analyzer for the simplified database schema with just hyperopt_results and backtest_results tables.
     """
 
     def __init__(self, db_path: str = "freqtrade_results.db"):
-        self.db_manager = ResultsDatabaseManager(db_path)
+        self.db_manager = DatabaseManager(db_path)
 
     def show_best_hyperopt_strategies(self, limit: int = 10, timeframe: Optional[str] = None,
                                       min_trades: int = 10) -> None:
@@ -32,8 +32,8 @@ class EnhancedResultsAnalyzer:
                 query = """
                     SELECT strategy_name, total_profit_pct, total_trades, win_rate, 
                            avg_profit_pct, max_drawdown_pct, sharpe_ratio, timeframe, 
-                           hyperopt_timestamp, run_number, epochs, hyperopt_function
-                    FROM hyperopt_runs 
+                           timestamp, run_number, epochs, hyperopt_function
+                    FROM hyperopt_results 
                     WHERE status = 'completed' AND total_trades >= ?
                 """
                 params = [min_trades]
@@ -64,7 +64,7 @@ class EnhancedResultsAnalyzer:
                         f"{row['max_drawdown_pct']:-.2f}%",
                         f"{row['sharpe_ratio']:.2f}",
                         row['timeframe'],
-                        row['hyperopt_timestamp'][:10],
+                        row['timestamp'][:10],
                         row['run_number'],
                         row['epochs'],
                         row['hyperopt_function'][:15] + "..." if len(row['hyperopt_function']) > 15 else row[
@@ -90,11 +90,11 @@ class EnhancedResultsAnalyzer:
                 query = """
                     SELECT b.strategy_name, b.total_profit_pct, b.total_trades, b.win_rate, 
                            b.avg_profit_pct, b.max_drawdown_pct, b.sharpe_ratio, b.timeframe, 
-                           b.backtest_timestamp, b.avg_trade_duration,
+                           b.timestamp, b.avg_trade_duration,
                            h.total_profit_pct as hyperopt_profit,
                            (b.total_profit_pct - COALESCE(h.total_profit_pct, 0)) as reality_gap
-                    FROM backtest_runs b
-                    LEFT JOIN hyperopt_runs h ON b.hyperopt_id = h.id
+                    FROM backtest_results b
+                    LEFT JOIN hyperopt_results h ON b.hyperopt_id = h.id
                     WHERE b.status = 'completed' AND b.total_trades >= ?
                 """
                 params = [min_trades]
@@ -128,7 +128,7 @@ class EnhancedResultsAnalyzer:
                         f"{row['max_drawdown_pct']:-.2f}%",
                         f"{row['sharpe_ratio']:.2f}",
                         row['timeframe'],
-                        row['backtest_timestamp'][:10],
+                        row['timestamp'][:10],
                         row['avg_trade_duration'] or "N/A",
                         hyperopt_profit,
                         reality_gap
@@ -204,7 +204,7 @@ class EnhancedResultsAnalyzer:
         except Exception as e:
             print(f"Error analyzing reality gap: {e}")
 
-    def show_optimization_vs_backtest_comparison(self, strategy_name: str) -> None:
+    def show_strategy_comparison(self, strategy_name: str) -> None:
         """Compare optimization vs backtest results for a specific strategy."""
         print(f"\n🔍 OPTIMIZATION vs BACKTEST: {strategy_name}")
         print("=" * 120)
@@ -216,20 +216,20 @@ class EnhancedResultsAnalyzer:
                 # Get all optimizations and their corresponding backtests for this strategy
                 cursor = conn.execute("""
                     SELECT 
-                        h.id as hyperopt_id, h.run_number, h.hyperopt_timestamp,
+                        h.id as hyperopt_id, h.run_number, h.timestamp as h_timestamp,
                         h.total_profit_pct as h_profit, h.total_trades as h_trades,
                         h.win_rate as h_win_rate, h.sharpe_ratio as h_sharpe,
                         h.epochs, h.hyperopt_function,
 
-                        b.id as backtest_id, b.backtest_timestamp,
+                        b.id as backtest_id, b.timestamp as b_timestamp,
                         b.total_profit_pct as b_profit, b.total_trades as b_trades,
                         b.win_rate as b_win_rate, b.sharpe_ratio as b_sharpe,
                         b.avg_trade_duration,
 
                         (h.total_profit_pct - COALESCE(b.total_profit_pct, 0)) as gap
 
-                    FROM hyperopt_runs h
-                    LEFT JOIN backtest_runs b ON h.id = b.hyperopt_id
+                    FROM hyperopt_results h
+                    LEFT JOIN backtest_results b ON h.id = b.hyperopt_id
                     WHERE h.strategy_name = ? AND h.status = 'completed'
                     ORDER BY h.total_profit_pct DESC
                 """, (strategy_name,))
@@ -254,8 +254,8 @@ class EnhancedResultsAnalyzer:
                         row['b_trades'] or "N/A",
                         f"{row['h_sharpe']:.2f}",
                         f"{row['b_sharpe']:.2f}" if row['b_sharpe'] else "N/A",
-                        row['hyperopt_timestamp'][:10],
-                        row['backtest_timestamp'][:10] if row['backtest_timestamp'] else "N/A",
+                        row['h_timestamp'][:10],
+                        row['b_timestamp'][:10] if row['b_timestamp'] else "N/A",
                         row['epochs'],
                         status
                     ])
@@ -287,266 +287,133 @@ class EnhancedResultsAnalyzer:
         except Exception as e:
             print(f"Error comparing optimization vs backtest: {e}")
 
-    def show_backtest_trade_details(self, backtest_id: int) -> None:
-        """Show detailed trade analysis for a specific backtest."""
-        print(f"\n📋 TRADE DETAILS - Backtest ID {backtest_id}")
-        print("=" * 80)
-
-        try:
-            trade_analysis = self.db_manager.get_backtest_trade_analysis(backtest_id)
-
-            if not trade_analysis:
-                print(f"No trade data found for backtest ID {backtest_id}")
-                return
-
-            # Trade statistics
-            stats = trade_analysis['trade_stats']
-            print("📊 TRADE STATISTICS:")
-            print(f"Total trades: {stats['total_trades']}")
-            print(f"Average profit: {stats['avg_profit_pct']:.2f}%")
-            print(f"Total profit: {stats['total_profit_abs']:.8f}")
-            print(f"Average duration: {stats['avg_duration_minutes']:.1f} minutes")
-            print(f"Best trade: {stats['best_trade_pct']:.2f}%")
-            print(f"Worst trade: {stats['worst_trade_pct']:.2f}%")
-
-            # Trades by pair
-            if trade_analysis['trades_by_pair']:
-                print(f"\n💱 PERFORMANCE BY PAIR:")
-                pair_data = []
-                for pair_info in trade_analysis['trades_by_pair']:
-                    pair_data.append([
-                        pair_info['pair'],
-                        pair_info['trade_count'],
-                        f"{pair_info['avg_profit_pct']:.2f}%",
-                        f"{pair_info['total_profit']:.8f}"
-                    ])
-
-                print(tabulate(pair_data, headers=['Pair', 'Trades', 'Avg Profit', 'Total Profit'], tablefmt='grid'))
-
-            # Exit reasons
-            if trade_analysis['exit_reasons']:
-                print(f"\n🚪 EXIT REASONS:")
-                exit_data = []
-                for exit_info in trade_analysis['exit_reasons']:
-                    exit_data.append([
-                        exit_info['exit_reason'],
-                        exit_info['count'],
-                        f"{exit_info['avg_profit_pct']:.2f}%"
-                    ])
-
-                print(tabulate(exit_data, headers=['Exit Reason', 'Count', 'Avg Profit'], tablefmt='grid'))
-
-        except Exception as e:
-            print(f"Error retrieving trade details: {e}")
-
-    def show_sessions(self, session_type: str = "both", limit: int = 10) -> None:
-        """Show recent optimization and/or backtest sessions."""
-        if session_type in ["both", "optimization"]:
-            print(f"\n📅 RECENT OPTIMIZATION SESSIONS")
-            print("=" * 100)
-            self._show_optimization_sessions(limit)
-
-        if session_type in ["both", "backtest"]:
-            print(f"\n📅 RECENT BACKTEST SESSIONS")
-            print("=" * 100)
-            self._show_backtest_sessions(limit)
-
-    def _show_optimization_sessions(self, limit: int) -> None:
-        """Show optimization sessions."""
-        try:
-            with sqlite3.connect(self.db_manager.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("""
-                    SELECT id, session_timestamp, total_strategies, successful_strategies,
-                           failed_strategies, session_duration_seconds, timeframe, epochs,
-                           hyperopt_function
-                    FROM optimization_sessions 
-                    ORDER BY session_timestamp DESC
-                    LIMIT ?
-                """, (limit,))
-
-                results = cursor.fetchall()
-
-                if not results:
-                    print("No optimization sessions found.")
-                    return
-
-                table_data = []
-                for row in results:
-                    duration_min = row['session_duration_seconds'] // 60 if row['session_duration_seconds'] else 0
-                    success_rate = (row['successful_strategies'] / row['total_strategies'] * 100) if row[
-                        'total_strategies'] else 0
-
-                    table_data.append([
-                        row['id'],
-                        row['session_timestamp'][:16],
-                        row['total_strategies'] or 0,
-                        row['successful_strategies'] or 0,
-                        row['failed_strategies'] or 0,
-                        f"{success_rate:.0f}%",
-                        f"{duration_min}min",
-                        row['timeframe'],
-                        row['epochs'],
-                        row['hyperopt_function'][:20] + "..." if row['hyperopt_function'] and len(
-                            row['hyperopt_function']) > 20 else row['hyperopt_function']
-                    ])
-
-                headers = ['ID', 'Timestamp', 'Total', 'Success', 'Failed',
-                           'Success Rate', 'Duration', 'Timeframe', 'Epochs', 'Loss Function']
-
-                print(tabulate(table_data, headers=headers, tablefmt='grid'))
-
-        except Exception as e:
-            print(f"Error retrieving optimization sessions: {e}")
-
-    def _show_backtest_sessions(self, limit: int) -> None:
-        """Show backtest sessions."""
-        try:
-            with sqlite3.connect(self.db_manager.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.execute("""
-                    SELECT bs.id, bs.session_timestamp, bs.total_strategies, 
-                           bs.successful_backtests, bs.failed_backtests, 
-                           bs.session_duration_seconds, bs.timeframe,
-                           bs.optimization_session_id,
-                           os.session_timestamp as opt_session_timestamp
-                    FROM backtest_sessions bs
-                    LEFT JOIN optimization_sessions os ON bs.optimization_session_id = os.id
-                    ORDER BY bs.session_timestamp DESC
-                    LIMIT ?
-                """, (limit,))
-
-                results = cursor.fetchall()
-
-                if not results:
-                    print("No backtest sessions found.")
-                    return
-
-                table_data = []
-                for row in results:
-                    duration_min = row['session_duration_seconds'] // 60 if row['session_duration_seconds'] else 0
-                    success_rate = (row['successful_backtests'] / row['total_strategies'] * 100) if row[
-                        'total_strategies'] else 0
-
-                    opt_session_link = f"→ Opt #{row['optimization_session_id']}" if row[
-                        'optimization_session_id'] else "Standalone"
-
-                    table_data.append([
-                        row['id'],
-                        row['session_timestamp'][:16],
-                        row['total_strategies'] or 0,
-                        row['successful_backtests'] or 0,
-                        row['failed_backtests'] or 0,
-                        f"{success_rate:.0f}%",
-                        f"{duration_min}min",
-                        row['timeframe'],
-                        opt_session_link
-                    ])
-
-                headers = ['ID', 'Timestamp', 'Total', 'Success', 'Failed',
-                           'Success Rate', 'Duration', 'Timeframe', 'Linked Session']
-
-                print(tabulate(table_data, headers=headers, tablefmt='grid'))
-
-        except Exception as e:
-            print(f"Error retrieving backtest sessions: {e}")
-
-    def show_strategy_performance_timeline(self, strategy_name: str) -> None:
+    def show_strategy_timeline(self, strategy_name: str) -> None:
         """Show performance timeline for a specific strategy across optimizations and backtests."""
         print(f"\n📈 PERFORMANCE TIMELINE: {strategy_name}")
         print("=" * 120)
 
         try:
-            with sqlite3.connect(self.db_manager.db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            timeline_data = self.db_manager.get_strategy_timeline(strategy_name)
 
-                # Get combined timeline
-                cursor = conn.execute("""
-                    SELECT 'hyperopt' as type, id, hyperopt_timestamp as timestamp, 
-                           total_profit_pct, total_trades, sharpe_ratio, run_number,
-                           epochs, hyperopt_function as details
-                    FROM hyperopt_runs 
-                    WHERE strategy_name = ? AND status = 'completed'
+            if not timeline_data:
+                print(f"No performance data found for strategy: {strategy_name}")
+                return
 
-                    UNION ALL
+            table_data = []
+            for row in timeline_data:
+                type_icon = "🔧" if row['type'] == 'hyperopt' else "🎯"
 
-                    SELECT 'backtest' as type, id, backtest_timestamp as timestamp,
-                           total_profit_pct, total_trades, sharpe_ratio, 
-                           hyperopt_id as run_number, backtest_duration_seconds as epochs,
-                           'Backtest validation' as details
-                    FROM backtest_runs 
-                    WHERE strategy_name = ? AND status = 'completed'
+                table_data.append([
+                    f"{type_icon} {row['type'].title()}",
+                    row['id'],
+                    row['timestamp'][:16],
+                    f"{row['total_profit_pct']:+.2f}%",
+                    row['total_trades'],
+                    f"{row['sharpe_ratio']:.2f}",
+                    row['run_number'] or "N/A",
+                    row['details'][:30] + "..." if row['details'] and len(row['details']) > 30 else row['details']
+                ])
 
-                    ORDER BY timestamp DESC
-                """, (strategy_name, strategy_name))
+            headers = ['Type', 'ID', 'Timestamp', 'Profit', 'Trades', 'Sharpe', 'Run/Link', 'Details']
 
-                results = cursor.fetchall()
+            print(tabulate(table_data, headers=headers, tablefmt='grid'))
 
-                if not results:
-                    print(f"No performance data found for strategy: {strategy_name}")
-                    return
+            # Performance summary
+            hyperopt_results = [row for row in timeline_data if row['type'] == 'hyperopt']
+            backtest_results = [row for row in timeline_data if row['type'] == 'backtest']
 
-                table_data = []
-                for row in results:
-                    type_icon = "🔧" if row['type'] == 'hyperopt' else "🎯"
+            print(f"\n📊 PERFORMANCE SUMMARY:")
+            print(f"• Total optimizations: {len(hyperopt_results)}")
+            print(f"• Total backtests: {len(backtest_results)}")
 
-                    table_data.append([
-                        f"{type_icon} {row['type'].title()}",
-                        row['id'],
-                        row['timestamp'][:16],
-                        f"{row['total_profit_pct']:+.2f}%",
-                        row['total_trades'],
-                        f"{row['sharpe_ratio']:.2f}",
-                        row['run_number'] or "N/A",
-                        row['details'][:30] + "..." if row['details'] and len(row['details']) > 30 else row['details']
-                    ])
+            if hyperopt_results:
+                best_opt = max(hyperopt_results, key=lambda x: x['total_profit_pct'])
+                avg_opt = sum(row['total_profit_pct'] for row in hyperopt_results) / len(hyperopt_results)
+                print(f"• Best optimization: {best_opt['total_profit_pct']:+.2f}% (ID {best_opt['id']})")
+                print(f"• Average optimization: {avg_opt:+.2f}%")
 
-                headers = ['Type', 'ID', 'Timestamp', 'Profit', 'Trades', 'Sharpe', 'Run/Link', 'Details']
-
-                print(tabulate(table_data, headers=headers, tablefmt='grid'))
-
-                # Performance summary
-                hyperopt_results = [row for row in results if row['type'] == 'hyperopt']
-                backtest_results = [row for row in results if row['type'] == 'backtest']
-
-                print(f"\n📊 PERFORMANCE SUMMARY:")
-                print(f"• Total optimizations: {len(hyperopt_results)}")
-                print(f"• Total backtests: {len(backtest_results)}")
+            if backtest_results:
+                best_bt = max(backtest_results, key=lambda x: x['total_profit_pct'])
+                avg_bt = sum(row['total_profit_pct'] for row in backtest_results) / len(backtest_results)
+                print(f"• Best backtest: {best_bt['total_profit_pct']:+.2f}% (ID {best_bt['id']})")
+                print(f"• Average backtest: {avg_bt:+.2f}%")
 
                 if hyperopt_results:
-                    best_opt = max(hyperopt_results, key=lambda x: x['total_profit_pct'])
-                    avg_opt = sum(row['total_profit_pct'] for row in hyperopt_results) / len(hyperopt_results)
-                    print(f"• Best optimization: {best_opt['total_profit_pct']:+.2f}% (ID {best_opt['id']})")
-                    print(f"• Average optimization: {avg_opt:+.2f}%")
-
-                if backtest_results:
-                    best_bt = max(backtest_results, key=lambda x: x['total_profit_pct'])
-                    avg_bt = sum(row['total_profit_pct'] for row in backtest_results) / len(backtest_results)
-                    print(f"• Best backtest: {best_bt['total_profit_pct']:+.2f}% (ID {best_bt['id']})")
-                    print(f"• Average backtest: {avg_bt:+.2f}%")
-
-                    if hyperopt_results:
-                        avg_gap = avg_opt - avg_bt
-                        print(f"• Average reality gap: {avg_gap:+.2f}%")
+                    avg_gap = avg_opt - avg_bt
+                    print(f"• Average reality gap: {avg_gap:+.2f}%")
 
         except Exception as e:
             print(f"Error showing performance timeline: {e}")
 
-    def export_best_hyperopt_configs(self, output_dir: str = "best_hyperopt_configs", limit: int = 5) -> None:
-        """Export configuration files for the best performing hyperopt strategies."""
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
-
-        print(f"\n💾 EXPORTING TOP {limit} HYPEROPT CONFIGURATIONS")
+    def show_database_stats(self) -> None:
+        """Show overall database statistics."""
+        print(f"\n📊 DATABASE STATISTICS")
         print("=" * 80)
 
         try:
-            best_strategies = self.db_manager.get_best_hyperopt_strategies(limit=limit)
+            stats = self.db_manager.get_stats_summary()
+
+            if not stats:
+                print("No statistics available.")
+                return
+
+            # Hyperopt stats
+            if 'hyperopt' in stats:
+                h_stats = stats['hyperopt']
+                print(f"🔧 HYPEROPT RESULTS:")
+                print(f"• Total runs: {h_stats.get('total_hyperopt', 0)}")
+                print(f"• Unique strategies: {h_stats.get('unique_strategies_hyperopt', 0)}")
+                print(f"• Average profit: {h_stats.get('avg_profit_hyperopt', 0):+.2f}%")
+                print(f"• Best profit: {h_stats.get('max_profit_hyperopt', 0):+.2f}%")
+                print(f"• Worst profit: {h_stats.get('min_profit_hyperopt', 0):+.2f}%")
+
+            # Backtest stats
+            if 'backtest' in stats:
+                b_stats = stats['backtest']
+                print(f"\n🎯 BACKTEST RESULTS:")
+                print(f"• Total runs: {b_stats.get('total_backtest', 0)}")
+                print(f"• Unique strategies: {b_stats.get('unique_strategies_backtest', 0)}")
+                print(f"• Linked to hyperopt: {b_stats.get('linked_to_hyperopt', 0)}")
+                print(f"• Average profit: {b_stats.get('avg_profit_backtest', 0):+.2f}%")
+                print(f"• Best profit: {b_stats.get('max_profit_backtest', 0):+.2f}%")
+                print(f"• Worst profit: {b_stats.get('min_profit_backtest', 0):+.2f}%")
+
+            # Reality gap stats
+            if 'reality_gap' in stats:
+                gap_stats = stats['reality_gap']
+                if gap_stats.get('compared_pairs', 0) > 0:
+                    print(f"\n📈 REALITY GAP ANALYSIS:")
+                    print(f"• Compared pairs: {gap_stats.get('compared_pairs', 0)}")
+                    print(f"• Average gap: {gap_stats.get('avg_reality_gap', 0):+.2f}%")
+
+        except Exception as e:
+            print(f"Error retrieving database statistics: {e}")
+
+    def export_best_configs(self, result_type: str = "hyperopt", output_dir: str = None, limit: int = 5) -> None:
+        """Export configuration files for the best performing strategies."""
+        if not output_dir:
+            output_dir = f"best_{result_type}_configs"
+
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+
+        print(f"\n💾 EXPORTING TOP {limit} {result_type.upper()} CONFIGURATIONS")
+        print("=" * 80)
+
+        try:
+            if result_type == "hyperopt":
+                best_strategies = self.db_manager.get_best_hyperopt_strategies(limit=limit)
+            else:
+                best_strategies = self.db_manager.get_best_backtest_strategies(limit=limit)
+
+            if not best_strategies:
+                print(f"No {result_type} results found.")
+                return
 
             for i, strategy in enumerate(best_strategies, 1):
                 config_file = strategy['config_file_path']
                 if config_file and Path(config_file).exists():
-                    dest_name = f"{i:02d}_{strategy['strategy_name']}_hyperopt_profit{strategy['total_profit_pct']:+.2f}%_id{strategy['id']}.json"
+                    dest_name = f"{i:02d}_{strategy['strategy_name']}_{result_type}_profit{strategy['total_profit_pct']:+.2f}%_id{strategy['id']}.json"
                     dest_path = output_path / dest_name
 
                     with open(config_file, 'r') as src, open(dest_path, 'w') as dst:
@@ -557,59 +424,77 @@ class EnhancedResultsAnalyzer:
                 else:
                     print(f"✗ Config not found for {strategy['strategy_name']} (ID {strategy['id']})")
 
-            print(f"\nHyperopt configurations exported to: {output_path}")
+            print(f"\n{result_type.title()} configurations exported to: {output_path}")
 
         except Exception as e:
-            print(f"Error exporting hyperopt configs: {e}")
+            print(f"Error exporting {result_type} configs: {e}")
 
-    def export_best_backtest_configs(self, output_dir: str = "best_backtest_configs", limit: int = 5) -> None:
-        """Export configuration files for the best performing backtest strategies."""
-        output_path = Path(output_dir)
-        output_path.mkdir(exist_ok=True)
-
-        print(f"\n💾 EXPORTING TOP {limit} BACKTEST CONFIGURATIONS")
-        print("=" * 80)
+    def show_untested_strategies(self, limit: int = 10) -> None:
+        """Show hyperopt strategies that haven't been backtested yet."""
+        print(f"\n⏳ TOP {limit} UNTESTED HYPEROPT STRATEGIES")
+        print("=" * 100)
 
         try:
-            best_strategies = self.db_manager.get_best_backtest_strategies(limit=limit)
+            with sqlite3.connect(self.db_manager.db_path) as conn:
+                conn.row_factory = sqlite3.Row
 
-            for i, strategy in enumerate(best_strategies, 1):
-                config_file = strategy['config_file_path']
-                if config_file and Path(config_file).exists():
-                    dest_name = f"{i:02d}_{strategy['strategy_name']}_backtest_profit{strategy['total_profit_pct']:+.2f}%_id{strategy['id']}.json"
-                    dest_path = output_path / dest_name
+                cursor = conn.execute("""
+                    SELECT h.id, h.strategy_name, h.total_profit_pct, h.total_trades, 
+                           h.win_rate, h.sharpe_ratio, h.timestamp, h.run_number
+                    FROM hyperopt_results h
+                    LEFT JOIN backtest_results b ON h.id = b.hyperopt_id
+                    WHERE h.status = 'completed' AND b.id IS NULL
+                    ORDER BY h.total_profit_pct DESC
+                    LIMIT ?
+                """, (limit,))
 
-                    with open(config_file, 'r') as src, open(dest_path, 'w') as dst:
-                        config = json.load(src)
-                        json.dump(config, dst, indent=2)
+                results = cursor.fetchall()
 
-                    print(f"✓ Exported: {dest_name}")
-                else:
-                    print(f"✗ Config not found for {strategy['strategy_name']} (ID {strategy['id']})")
+                if not results:
+                    print("All hyperopt strategies have been backtested!")
+                    return
 
-            print(f"\nBacktest configurations exported to: {output_path}")
+                table_data = []
+                for row in results:
+                    table_data.append([
+                        row['id'],
+                        row['strategy_name'],
+                        f"{row['total_profit_pct']:+.2f}%",
+                        row['total_trades'],
+                        f"{row['win_rate']:.1f}%",
+                        f"{row['sharpe_ratio']:.2f}",
+                        row['timestamp'][:10],
+                        row['run_number']
+                    ])
+
+                headers = ['ID', 'Strategy', 'Profit', 'Trades', 'Win Rate', 'Sharpe', 'Date', 'Run']
+                print(tabulate(table_data, headers=headers, tablefmt='grid'))
+
+                print(f"\n💡 RECOMMENDATION:")
+                print(f"Run backtests for these strategies using:")
+                print(f"python backtest_runner.py from-hyperopt <ID>")
 
         except Exception as e:
-            print(f"Error exporting backtest configs: {e}")
+            print(f"Error showing untested strategies: {e}")
 
-    def show_comprehensive_strategy_report(self, strategy_name: str) -> None:
+    def generate_strategy_report(self, strategy_name: str) -> None:
         """Generate a comprehensive report for a specific strategy."""
         print(f"\n📋 COMPREHENSIVE STRATEGY REPORT: {strategy_name}")
         print("=" * 120)
 
-        # Show optimization results
-        self.show_optimization_vs_backtest_comparison(strategy_name)
+        # Show strategy comparison
+        self.show_strategy_comparison(strategy_name)
 
         # Show performance timeline
         print("\n" + "─" * 120)
-        self.show_strategy_performance_timeline(strategy_name)
+        self.show_strategy_timeline(strategy_name)
 
-        # Show detailed backtest analysis for best backtest
+        # Show best backtest details if available
         try:
             with sqlite3.connect(self.db_manager.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT id FROM backtest_runs 
+                    SELECT * FROM backtest_results 
                     WHERE strategy_name = ? AND status = 'completed'
                     ORDER BY total_profit_pct DESC LIMIT 1
                 """, (strategy_name,))
@@ -617,15 +502,69 @@ class EnhancedResultsAnalyzer:
                 result = cursor.fetchone()
                 if result:
                     print("\n" + "─" * 120)
-                    self.show_backtest_trade_details(result['id'])
+                    print(f"🎯 BEST BACKTEST DETAILS (ID {result['id']}):")
+                    print(f"• Profit: {result['total_profit_pct']:+.2f}%")
+                    print(f"• Total trades: {result['total_trades']}")
+                    print(f"• Win rate: {result['win_rate']:.1f}%")
+                    print(f"• Max drawdown: {result['max_drawdown_pct']:-.2f}%")
+                    print(f"• Sharpe ratio: {result['sharpe_ratio']:.2f}")
+                    print(f"• Average trade duration: {result['avg_trade_duration']}")
+                    print(f"• Best trade: {result['best_trade_pct']:+.2f}%")
+                    print(f"• Worst trade: {result['worst_trade_pct']:+.2f}%")
 
         except Exception as e:
             print(f"Error generating comprehensive report: {e}")
 
+    def migrate_old_database(self) -> None:
+        """Migrate from old database schema to simplified schema."""
+        print("\n🔄 DATABASE MIGRATION")
+        print("=" * 50)
+
+        try:
+            success = self.db_manager.migrate_from_old_schema()
+            if success:
+                print("✓ Migration completed successfully!")
+
+                # Show what was migrated
+                stats = self.db_manager.get_stats_summary()
+                if stats:
+                    print(f"\nMigration results:")
+                    if 'hyperopt' in stats:
+                        print(f"• Hyperopt records: {stats['hyperopt'].get('total_hyperopt', 0)}")
+                    if 'backtest' in stats:
+                        print(f"• Backtest records: {stats['backtest'].get('total_backtest', 0)}")
+
+                print(f"\n💡 Consider cleaning up old tables with:")
+                print(f"python analyzer.py cleanup-old-tables --confirm")
+            else:
+                print("✗ Migration failed. Check logs for details.")
+
+        except Exception as e:
+            print(f"Migration error: {e}")
+
+    def cleanup_old_tables(self, confirm: bool = False) -> None:
+        """Remove old database tables after migration."""
+        if not confirm:
+            print("\n⚠️  WARNING: This will permanently delete old database tables!")
+            print("Use --confirm flag if you're sure you want to proceed.")
+            return
+
+        print("\n🗑️  CLEANING UP OLD TABLES")
+        print("=" * 40)
+
+        try:
+            success = self.db_manager.cleanup_old_tables(confirm=True)
+            if success:
+                print("✓ Old tables cleaned up successfully!")
+            else:
+                print("✗ Cleanup failed. Check logs for details.")
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+
 
 def main():
-    """Main CLI interface for the enhanced analyzer."""
-    parser = argparse.ArgumentParser(description="Enhanced FreqTrade Results Analyzer")
+    """Main CLI interface for the simplified analyzer."""
+    parser = argparse.ArgumentParser(description="Simplified FreqTrade Results Analyzer")
     parser.add_argument("--db", default="freqtrade_results.db", help="Database file path")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -651,29 +590,22 @@ def main():
     vs_parser = subparsers.add_parser("vs", help="Compare optimization vs backtest for strategy")
     vs_parser.add_argument("strategy", help="Strategy name to analyze")
 
-    # Trade details command
-    trades_parser = subparsers.add_parser("trades", help="Show trade details for backtest")
-    trades_parser.add_argument("backtest_id", type=int, help="Backtest ID")
-
     # Performance timeline command
     timeline_parser = subparsers.add_parser("timeline", help="Show performance timeline for strategy")
     timeline_parser.add_argument("strategy", help="Strategy name")
 
-    # Sessions command
-    sessions_parser = subparsers.add_parser("sessions", help="Show recent sessions")
-    sessions_parser.add_argument("--type", choices=["optimization", "backtest", "both"],
-                                 default="both", help="Type of sessions to show")
-    sessions_parser.add_argument("--limit", type=int, default=10, help="Number of sessions to show")
+    # Database stats command
+    subparsers.add_parser("stats", help="Show database statistics")
 
-    # Export hyperopt configs command
-    export_hyperopt_parser = subparsers.add_parser("export-hyperopt", help="Export best hyperopt configurations")
-    export_hyperopt_parser.add_argument("--output", default="best_hyperopt_configs", help="Output directory")
-    export_hyperopt_parser.add_argument("--limit", type=int, default=5, help="Number of configs to export")
+    # Untested strategies command
+    untested_parser = subparsers.add_parser("untested", help="Show untested hyperopt strategies")
+    untested_parser.add_argument("--limit", type=int, default=10, help="Number of results to show")
 
-    # Export backtest configs command
-    export_backtest_parser = subparsers.add_parser("export-backtest", help="Export best backtest configurations")
-    export_backtest_parser.add_argument("--output", default="best_backtest_configs", help="Output directory")
-    export_backtest_parser.add_argument("--limit", type=int, default=5, help="Number of configs to export")
+    # Export configs command
+    export_parser = subparsers.add_parser("export", help="Export best configurations")
+    export_parser.add_argument("type", choices=["hyperopt", "backtest"], help="Type of results to export")
+    export_parser.add_argument("--output", help="Output directory")
+    export_parser.add_argument("--limit", type=int, default=5, help="Number of configs to export")
 
     # Comprehensive report command
     report_parser = subparsers.add_parser("report", help="Generate comprehensive strategy report")
@@ -682,13 +614,17 @@ def main():
     # Migration command
     subparsers.add_parser("migrate", help="Migrate from old database schema")
 
+    # Cleanup command
+    cleanup_parser = subparsers.add_parser("cleanup-old-tables", help="Remove old database tables")
+    cleanup_parser.add_argument("--confirm", action="store_true", help="Confirm cleanup operation")
+
     args = parser.parse_args()
 
     if not args.command:
         parser.print_help()
         return
 
-    analyzer = EnhancedResultsAnalyzer(args.db)
+    analyzer = SimplifiedResultsAnalyzer(args.db)
 
     try:
         if args.command == "best-hyperopt":
@@ -698,25 +634,21 @@ def main():
         elif args.command == "gap":
             analyzer.show_reality_gap_analysis(args.strategy, args.limit)
         elif args.command == "vs":
-            analyzer.show_optimization_vs_backtest_comparison(args.strategy)
-        elif args.command == "trades":
-            analyzer.show_backtest_trade_details(args.backtest_id)
+            analyzer.show_strategy_comparison(args.strategy)
         elif args.command == "timeline":
-            analyzer.show_strategy_performance_timeline(args.strategy)
-        elif args.command == "sessions":
-            analyzer.show_sessions(args.type, args.limit)
-        elif args.command == "export-hyperopt":
-            analyzer.export_best_hyperopt_configs(args.output, args.limit)
-        elif args.command == "export-backtest":
-            analyzer.export_best_backtest_configs(args.output, args.limit)
+            analyzer.show_strategy_timeline(args.strategy)
+        elif args.command == "stats":
+            analyzer.show_database_stats()
+        elif args.command == "untested":
+            analyzer.show_untested_strategies(args.limit)
+        elif args.command == "export":
+            analyzer.export_best_configs(args.type, args.output, args.limit)
         elif args.command == "report":
-            analyzer.show_comprehensive_strategy_report(args.strategy)
+            analyzer.generate_strategy_report(args.strategy)
         elif args.command == "migrate":
-            success = analyzer.db_manager.migrate_from_old_schema()
-            if success:
-                print("✓ Migration completed successfully!")
-            else:
-                print("✗ Migration failed. Check logs for details.")
+            analyzer.migrate_old_database()
+        elif args.command == "cleanup-old-tables":
+            analyzer.cleanup_old_tables(args.confirm)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-FreqTrade Hyperparameter Optimization Automation - Updated for Enhanced Database
-Uses the enhanced database structure with separate hyperopt and backtest tables.
+FreqTrade Hyperparameter Optimization Automation - Updated for Simplified Database
+Uses the simplified two-table database structure.
 """
 
 import os
@@ -13,14 +13,14 @@ from pathlib import Path
 from typing import List, Optional
 
 from .optimization_config import OptimizationConfig
-from .results_database_manager import ResultsDatabaseManager
+from .results_database_manager import DatabaseManager
 from dotenv import load_dotenv
 
 # Import the updated executor
 try:
     from .freqtrade_executor import FreqTradeExecutor
 except ImportError:
-    # Fallback to updated executor if the import fails
+    # Fallback if import fails
     import sys
 
     current_dir = Path(__file__).parent
@@ -32,17 +32,11 @@ except ImportError:
         def __init__(self, config, logger):
             self.config = config
             self.logger = logger
-            self.db_manager = ResultsDatabaseManager()
+            self.db_manager = DatabaseManager()
             self.is_running = False
 
-        def start_session(self):
-            return self.db_manager.start_optimization_session(
-                exchange_name=self.config.exchange,
-                timeframe=self.config.timeframe,
-                timerange=self.config.timerange,
-                hyperopt_function=self.config.hyperfunction,
-                epochs=self.config.epochs
-            )
+        def start_session(self, session_name=None):
+            return self.db_manager.start_session(session_name)
 
         def stop_execution(self):
             return True
@@ -50,7 +44,7 @@ except ImportError:
 
 class FreqTradeOptimizer:
     """
-    Optimizer that uses the new database structure.
+    Optimizer that uses the simplified two-table database structure.
     """
 
     def __init__(self):
@@ -59,12 +53,13 @@ class FreqTradeOptimizer:
         self.setup_logging()
         self.config: Optional[OptimizationConfig] = None
         self.executor: Optional[FreqTradeExecutor] = None
-        self.db_manager = ResultsDatabaseManager()
+        self.db_manager = SimplifiedDatabaseManager()
 
         # Statistics
         self.strategies_processed = 0
         self.strategies_successful = 0
         self.strategies_failed = 0
+        self.session_info = {}
 
         # Handle Ctrl+C gracefully
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -90,14 +85,14 @@ class FreqTradeOptimizer:
         )
 
         self.logger = logging.getLogger(__name__)
-        self.logger.info("FreqTrade Optimizer initialized with enhanced database")
+        self.logger.info("FreqTrade Optimizer initialized with simplified database")
 
     def _signal_handler(self, signum, frame):
         """Handle Ctrl+C gracefully."""
         self.logger.warning("Received interrupt signal. Cleaning up...")
         if self.executor:
             self.executor.stop_execution()
-        self.print_enhanced_summary()
+        self.print_session_summary()
         sys.exit(0)
 
     def load_configuration(self) -> bool:
@@ -269,14 +264,22 @@ class FreqTradeOptimizer:
             pass
         return 0.0
 
-    def print_enhanced_summary(self) -> None:
-        """Print enhanced summary with database insights."""
+    def print_session_summary(self) -> None:
+        """Print session summary with database insights."""
         self.logger.info("=" * 60)
         self.logger.info("OPTIMIZATION SUMMARY")
         self.logger.info("=" * 60)
         self.logger.info(f"Total strategies processed: {self.strategies_processed}")
         self.logger.info(f"Successful optimizations: {self.strategies_successful}")
         self.logger.info(f"Failed optimizations: {self.strategies_failed}")
+
+        # Get session summary from executor
+        if hasattr(self.executor, 'get_session_summary'):
+            session_summary = self.executor.get_session_summary()
+            if session_summary:
+                self.logger.info(f"Session: {session_summary.get('session_name', 'Unknown')}")
+                duration = session_summary.get('duration_seconds', 0)
+                self.logger.info(f"Duration: {duration // 60}m {duration % 60}s")
 
         # Get top performers from database
         try:
@@ -292,26 +295,45 @@ class FreqTradeOptimizer:
             self.logger.warning(f"Could not retrieve top performers: {e}")
 
         self.logger.info("=" * 60)
-        if hasattr(self.executor, 'optimization_session_id') and self.executor.optimization_session_id:
-            self.logger.info(f"Session ID: {self.executor.optimization_session_id}")
-        self.logger.info("Use the enhanced analyzer tools to analyze results:")
-        self.logger.info("  python enhanced_analyzer.py best-hyperopt")
-        self.logger.info("  python enhanced_analyzer.py gap")
-        self.logger.info("  python enhanced_analyzer.py report <strategy_name>")
+        self.logger.info("Use the simplified analyzer tools to analyze results:")
+        self.logger.info("  python simplified_analyzer.py best-hyperopt")
+        self.logger.info("  python simplified_analyzer.py gap")
+        self.logger.info("  python simplified_analyzer.py report <strategy_name>")
+        self.logger.info("  python simplified_analyzer.py stats")
         self.logger.info("=" * 60)
 
+    def run_batch_backtest(self, limit: int = 5) -> bool:
+        """Run backtests for the top performing hyperopt strategies."""
+        try:
+            self.logger.info(f"Starting batch backtest for top {limit} strategies...")
+
+            results = self.executor.batch_backtest_from_best_hyperopt(limit=limit)
+
+            if results:
+                successful = sum(1 for r in results if r.success)
+                self.logger.info(f"Batch backtest completed: {successful}/{len(results)} successful")
+                return successful > 0
+            else:
+                self.logger.warning("No strategies found for batch backtesting")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error during batch backtest: {e}")
+            return False
+
     def run(self) -> bool:
-        """Run the complete optimization workflow with enhanced database tracking."""
+        """Run the complete optimization workflow with simplified database tracking."""
         try:
             session_start_time = datetime.now()
-            self.logger.info("Starting FreqTrade optimization process with enhanced database...")
+            self.logger.info("Starting FreqTrade optimization process with simplified database...")
 
             # Load configuration
             if not self.load_configuration():
                 return False
 
-            # Start database session
-            session_id = self.executor.start_session()
+            # Start session
+            session_name = f"OptSession_{session_start_time.strftime('%Y%m%d_%H%M%S')}"
+            self.session_info = self.executor.start_session(session_name)
 
             # Download data
             if not self.download_data():
@@ -337,18 +359,25 @@ class FreqTradeOptimizer:
                     self.strategies_failed += 1
                     self.logger.error(f"✗ {strategy_name} optimization failed")
 
-            # Update session summary
-            session_duration = int((datetime.now() - session_start_time).total_seconds())
-            self.db_manager.update_optimization_session_summary(
-                session_id,
-                total_strategies,
-                self.strategies_successful,
-                self.strategies_failed,
-                session_duration
-            )
+            # Update executor session stats
+            self.executor.update_session_stats()
 
-            # Print enhanced summary with database insights
-            self.print_enhanced_summary()
+            # Optional: Run batch backtest for best strategies
+            if self.strategies_successful > 0:
+                self.logger.info("\n" + "=" * 60)
+                self.logger.info("STARTING VALIDATION BACKTESTS")
+                self.logger.info("=" * 60)
+
+                # Ask user if they want to run backtests (or auto-run top 3)
+                try:
+                    backtest_limit = min(3, self.strategies_successful)
+                    self.logger.info(f"Running validation backtests for top {backtest_limit} strategies...")
+                    self.run_batch_backtest(limit=backtest_limit)
+                except Exception as e:
+                    self.logger.warning(f"Batch backtest failed: {e}")
+
+            # Print session summary with database insights
+            self.print_session_summary()
 
             return self.strategies_successful > 0
 
@@ -362,14 +391,15 @@ class FreqTradeOptimizer:
 
 def main():
     """Main entry point of the CLI application."""
-    print("FreqTrade Hyperparameter Optimization Automation - Enhanced Version")
-    print("=" * 60)
+    print("FreqTrade Hyperparameter Optimization Automation - Simplified Database Version")
+    print("=" * 80)
     print("Features:")
-    print("• Enhanced database with separate hyperopt and backtest tables")
+    print("• Simplified two-table database (hyperopt_results + backtest_results)")
     print("• Reality gap analysis to detect overfitting")
     print("• Advanced metrics (Sharpe, Calmar, Sortino ratios)")
-    print("• Session tracking and relationship management")
-    print("=" * 60)
+    print("• Session tracking with embedded metadata")
+    print("• Automatic validation backtests")
+    print("=" * 80)
 
     optimizer = FreqTradeOptimizer()
     exit_code = 1  # Default to failure
@@ -378,10 +408,11 @@ def main():
         if optimizer.run():
             print("\n✓ Optimization workflow completed successfully!")
             print("\n🔍 Next Steps:")
-            print("1. Analyze results: python enhanced_analyzer.py best-hyperopt")
-            print("2. Run backtests: python backtest_runner.py batch <session_id>")
-            print("3. Check reality gap: python enhanced_analyzer.py gap")
-            print("4. Generate reports: python enhanced_analyzer.py report <strategy>")
+            print("1. Analyze results: python simplified_analyzer.py best-hyperopt")
+            print("2. Check reality gap: python simplified_analyzer.py gap")
+            print("3. Generate reports: python simplified_analyzer.py report <strategy>")
+            print("4. View statistics: python simplified_analyzer.py stats")
+            print("5. Export configs: python simplified_analyzer.py export hyperopt")
             exit_code = 0
         else:
             print("\n✗ Optimization workflow completed with errors.")
@@ -389,13 +420,14 @@ def main():
             print("1. Check logs in the logs/ directory")
             print("2. Verify FreqTrade installation and configuration")
             print("3. Ensure strategies are valid and in the correct directory")
+            print("4. Check database: python simplified_analyzer.py stats")
 
     except Exception as e:
         print(f"\nFatal error: {e}")
         print("\n🔧 Recovery options:")
-        print("1. Check database integrity: python database_migration.py --verify-only")
-        print("2. Migrate to enhanced schema: python database_migration.py")
-        print("3. Rollback if needed: python database_migration.py --rollback")
+        print("1. Check database integrity: python simplified_analyzer.py stats")
+        print("2. Migrate from old schema: python simplified_analyzer.py migrate")
+        print("3. View recent results: python simplified_analyzer.py best-hyperopt --limit 5")
     finally:
         sys.exit(exit_code)
 

@@ -12,7 +12,8 @@ from pathlib import Path
 # Add the current directory to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from modules.freqtrade_dashboard import FreqTradeDashboard
+# Import the main dashboard class from the new structure
+from modules.dashboard import FreqTradeDashboard
 
 
 def main():
