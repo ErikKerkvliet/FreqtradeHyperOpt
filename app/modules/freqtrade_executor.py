@@ -143,7 +143,7 @@ class FreqTradeExecutor:
                 )
 
             self.is_running = True
-            self._notify_progress(f"Executing: {' '.join(command)}")
+            self._notify_progress(f"Running")
             self._notify_output(f"Command: {' '.join(command)}\n")
 
             # Setup environment
@@ -239,8 +239,8 @@ class FreqTradeExecutor:
             if return_code == 0:
                 self._notify_progress("Command completed successfully")
             else:
-                result.error_message = f"Command failed with return code {return_code}"
-                self._notify_progress(f"Command failed with return code {return_code}")
+                result.error_message = f"Command failed with {return_code}"
+                self._notify_progress(f"Command failed with {return_code}")
 
             return result
 

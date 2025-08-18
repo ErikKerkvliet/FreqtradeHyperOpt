@@ -131,7 +131,7 @@ class FreqTradeDashboard:
             if hasattr(self, 'refresh_data_info'):
                 self.refresh_data_info()
         else:
-            message = f"Command failed: {result.error_message or 'Unknown error'}"
+            message = "Unknown error"
             if hasattr(self, 'progress_var'):
                 self.progress_var.set(message)
             self.append_output(f"\n✗ {message}\n")
@@ -933,14 +933,26 @@ class FreqTradeDashboard:
 
 
     def create_execution_tab(self):
-        """Create the execution tab for running hyperopt and backtest."""
+        """Create the execution tab with FIXED layout using grid."""
         self.execution_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.execution_frame, text="Execution")
 
-        # Create left panel for parameters
-        left_exec_panel = ttk.Frame(self.execution_frame)
-        left_exec_panel.pack(side='left', fill='y', padx=(10, 5), pady=10)
+        # Configure grid weights for the execution frame
+        self.execution_frame.grid_rowconfigure(0, weight=1)
+        self.execution_frame.grid_columnconfigure(0, weight=0, minsize=350)  # Fixed width for left panel
+        self.execution_frame.grid_columnconfigure(1, weight=1)  # Expandable right panel
 
+        # Create left panel for parameters (FIXED WIDTH)
+        left_exec_panel = ttk.Frame(self.execution_frame)
+        left_exec_panel.grid(row=0, column=0, sticky='nsew', padx=(10, 5), pady=10)
+
+        # Create right panel for output (EXPANDABLE)
+        right_exec_panel = ttk.Frame(self.execution_frame)
+        right_exec_panel.grid(row=0, column=1, sticky='nsew', padx=(5, 10), pady=10)
+        right_exec_panel.grid_rowconfigure(0, weight=1)
+        right_exec_panel.grid_columnconfigure(0, weight=1)
+
+        # LEFT PANEL CONTENT
         # Parameters section
         params_frame = ttk.LabelFrame(left_exec_panel, text="Execution Parameters", padding=10)
         params_frame.pack(fill='x', pady=(0, 10))
@@ -957,7 +969,8 @@ class FreqTradeDashboard:
         config_file_frame.pack(fill='x', pady=(0, 10))
 
         self.exec_config_var = tk.StringVar()
-        ttk.Entry(config_file_frame, textvariable=self.exec_config_var, width=20).pack(side='left', fill='x', expand=True)
+        ttk.Entry(config_file_frame, textvariable=self.exec_config_var, width=20).pack(side='left', fill='x',
+                                                                                       expand=True)
         ttk.Button(config_file_frame, text="Browse", command=self.browse_config_file).pack(side='right', padx=(5, 0))
 
         # Timerange
@@ -1002,7 +1015,8 @@ class FreqTradeDashboard:
         buttons_frame.pack(fill='x')
 
         ttk.Button(buttons_frame, text="Run Hyperopt", command=self.run_hyperopt, style='Accent.TButton').pack(fill='x',
-                                                                                                               pady=(0, 5))
+                                                                                                               pady=(
+                                                                                                               0, 5))
         ttk.Button(buttons_frame, text="Run Backtest", command=self.run_backtest).pack(fill='x', pady=(0, 5))
         ttk.Button(buttons_frame, text="Stop Execution", command=self.stop_execution).pack(fill='x')
 
@@ -1011,21 +1025,20 @@ class FreqTradeDashboard:
         progress_frame.pack(fill='x', pady=(10, 0))
 
         self.progress_var = tk.StringVar(value="Ready")
-        ttk.Label(progress_frame, textvariable=self.progress_var).pack(anchor='w')
+        ttk.Label(progress_frame, textvariable=self.progress_var, wraplength=300).pack(anchor='w')
 
         self.progress_bar = ttk.Progressbar(progress_frame, mode='indeterminate')
         self.progress_bar.pack(fill='x', pady=(5, 0))
 
-        # Create right panel for output
-        right_exec_panel = ttk.Frame(self.execution_frame)
-        right_exec_panel.pack(side='right', fill='both', expand=True, padx=(5, 10), pady=10)
-
+        # RIGHT PANEL CONTENT
         # Output section
         output_frame = ttk.LabelFrame(right_exec_panel, text="Execution Output", padding=10)
-        output_frame.pack(fill='both', expand=True)
+        output_frame.grid(row=0, column=0, sticky='nsew')
+        output_frame.grid_rowconfigure(0, weight=1)
+        output_frame.grid_columnconfigure(0, weight=1)
 
         self.output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, font=('Consolas', 9))
-        self.output_text.pack(fill='both', expand=True)
+        self.output_text.grid(row=0, column=0, sticky='nsew')
 
         # Initialize execution state
         self.execution_thread = None
@@ -1506,7 +1519,7 @@ class FreqTradeDashboard:
 
         def run_command():
             try:
-                self.progress_var.set(f"Running {operation_name}...")
+                self.progress_var.set(f"Running...")
                 self.progress_bar.start()
                 self.output_text.delete(1.0, tk.END)
                 self.output_text.insert(tk.END, f"Starting {operation_name}...\n")
