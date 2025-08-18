@@ -37,11 +37,15 @@ def main():
             if hasattr(app, 'current_process') and app.current_process:
                 if messagebox.askokcancel("Quit", "A process is running. Do you want to stop it and quit?"):
                     try:
+                        # FIX: Call the main cleanup method
+                        app.cleanup()
                         app.current_process.terminate()
                     except:
                         pass
                     root.destroy()
             else:
+                # FIX: Call the main cleanup method before destroying the window
+                app.cleanup()
                 root.destroy()
 
         root.protocol("WM_DELETE_WINDOW", on_closing)

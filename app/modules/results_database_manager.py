@@ -238,7 +238,7 @@ class DatabaseManager:
                     conn.execute(index_sql)
 
                 conn.commit()
-                self.logger.info(f"Simplified database initialized: {self.db_path}")
+                self.logger.info(f"Database initialized: {self.db_path}")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")

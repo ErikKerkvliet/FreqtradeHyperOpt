@@ -298,6 +298,8 @@ class LogsTab(AbstractTab):
             self._start_auto_refresh()
         else:
             self._stop_auto_refresh()
+            # Update status here, in direct response to the user action
+            self._update_status("Auto-refresh stopped")
 
     def _start_auto_refresh(self):
         """Start auto-refresh in a background thread."""
@@ -310,11 +312,11 @@ class LogsTab(AbstractTab):
         self._update_status("Auto-refresh started")
 
     def _stop_auto_refresh(self):
-        """Stop auto-refresh."""
+        """
+        FIX: Safely stop the auto-refresh thread without updating the UI.
+        The UI update is now handled in _toggle_auto_refresh.
+        """
         self.stop_auto_refresh = True
-        if self.auto_refresh_thread:
-            self.auto_refresh_thread.join(timeout=1.0)
-        self._update_status("Auto-refresh stopped")
 
     def _auto_refresh_worker(self):
         """Worker thread for auto-refresh."""
@@ -339,8 +341,18 @@ class LogsTab(AbstractTab):
 
     def _update_status(self, message: str, color: str = 'gray'):
         """Update the status label."""
-        self.status_label.config(text=message, foreground=color)
+        # Check if the label widget still exists before trying to configure it
+        if self.status_label and self.status_label.winfo_exists():
+            self.status_label.config(text=message, foreground=color)
 
-    def __del__(self):
-        """Cleanup when tab is destroyed."""
+    # FIX: Remove the unreliable __del__ method
+    # def __del__(self):
+    #     """Cleanup when tab is destroyed."""
+    #     self._stop_auto_refresh()
+
+    def cleanup(self):
+        """
+        FIX: Add a safe cleanup method to be called by the main application
+        before the window is destroyed.
+        """
         self._stop_auto_refresh()

@@ -9,7 +9,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import os
 import logging
-import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
@@ -65,7 +64,7 @@ class FreqTradeDashboard:
 
     def setup_logging(self):
         """
-        FIX: Setup comprehensive logging to both console and a file for the GUI.
+        Setup comprehensive logging to both console and a file for the GUI.
         This ensures log files are created for the LogsTab to display.
         """
         # Create logs directory if it doesn't exist
@@ -251,3 +250,13 @@ class FreqTradeDashboard:
         button_frame.pack(fill='x')
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side='right', padx=(5, 0))
         ttk.Button(button_frame, text="Download", command=start_download, style='Accent.TButton').pack(side='right')
+
+    def cleanup(self):
+        """
+        FIX: Add a safe cleanup method to be called before the application closes.
+        This will ensure background threads are stopped gracefully.
+        """
+        self.logger.info("Performing cleanup before application exit...")
+        self.logs_tab.cleanup()
+        if self.executor:
+            self.executor.stop_execution()

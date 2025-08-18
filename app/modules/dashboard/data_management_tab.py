@@ -25,7 +25,6 @@ class DataManagementTab(AbstractTab):
 
         # Tab-specific variables
         self.data_status_var = tk.StringVar(value="Ready")
-        self.freqtrade_path = None
 
         # Widgets that will be created
         self.data_notebook = None
@@ -36,8 +35,9 @@ class DataManagementTab(AbstractTab):
         """Create the data management tab."""
         self.frame = ttk.Frame(self.parent)
 
-        # Get FreqTrade path from callback
-        self.freqtrade_path = self.call_callback('get_freqtrade_path')
+        # FIX: Remove this line. The callback is not available yet, and the path is
+        # only needed when refresh_data() is called anyway.
+        # self.freqtrade_path = self.call_callback('get_freqtrade_path')
 
         self._create_toolbar()
         self._create_data_notebook()
@@ -56,7 +56,6 @@ class DataManagementTab(AbstractTab):
         # Status label
         status_label = self.create_status_label(toolbar, "Ready")
         status_label.pack(side='left')
-        # self.data_status_var is initialized in __init__
         status_label.config(textvariable=self.data_status_var)
 
     def _create_data_notebook(self):
@@ -230,8 +229,9 @@ class DataManagementTab(AbstractTab):
 
     def refresh_data(self):
         """Refresh the data information for all exchanges."""
-        if not self.freqtrade_path:
-            # FIX: Use the bound StringVar to update the status label
+        # FIX: Get the freqtrade_path from the callback every time.
+        freqtrade_path = self.call_callback('get_freqtrade_path')
+        if not freqtrade_path:
             self.data_status_var.set("FreqTrade path not configured")
             return
 
@@ -239,7 +239,7 @@ class DataManagementTab(AbstractTab):
             self.data_status_var.set("Scanning data files...")
 
             # Get data directory
-            data_base_dir = Path(self.freqtrade_path) / "user_data" / "data"
+            data_base_dir = Path(freqtrade_path) / "user_data" / "data"
 
             if not data_base_dir.exists():
                 self.data_status_var.set("Data directory not found")

@@ -65,8 +65,10 @@ class ExecutionTab(AbstractTab):
         self._create_progress_section(left_exec_panel)
         self._create_output_section(right_exec_panel)
 
-        # Load initial data
-        self._load_strategies()
+        # FIX: Do NOT load strategies here. The callback is not ready yet.
+        # This will be handled by the refresh_data() method, which is called
+        # by the main dashboard after all initialization is complete.
+        # self._load_strategies()
 
         return self.frame
 
@@ -177,11 +179,10 @@ class ExecutionTab(AbstractTab):
 
     def _browse_config_file(self):
         """Browse for configuration file for execution."""
-        initial_path = Path("../../configs")
         file_path = self.browse_file(
             title="Select Configuration File",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-            initialdir=str(initial_path) if initial_path.exists() else None
+            initialdir="configs"
         )
 
         if file_path:
@@ -320,20 +321,19 @@ class ExecutionTab(AbstractTab):
 
         if result.success:
             message = "Command completed successfully!"
-            full_message = "command completed successfully!"
             if hasattr(result, 'hyperopt_id') and result.hyperopt_id:
-                full_message += f"\n (Hyperopt DB record: {result.hyperopt_id})"
+                message += f" (Hyperopt DB record: {result.hyperopt_id})"
             elif hasattr(result, 'backtest_id') and result.backtest_id:
-                full_message += f"\n (Backtest DB record: {result.backtest_id})"
+                message += f" (Backtest DB record: {result.backtest_id})"
 
             self.progress_var.set(message)
-            self._append_output(f"\n✓ {full_message}\n")
+            self._append_output(f"\n✓ {message}\n")
 
             # Refresh data in other tabs
             self.call_callback('refresh_results_data')
         else:
-            message = "Unknown error"
-            self.progress_var.set(f"Error")
+            message = result.error_message or "Unknown error"
+            self.progress_var.set(f"Error: {message}")
             self._append_output(f"\n✗ Error: {message}\n")
 
     def _execution_error(self, message: str):
