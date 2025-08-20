@@ -23,9 +23,13 @@ class ConfigEditorTab(AbstractTab):
 
         # Tab-specific variables
         self.current_config_file = None
-        self.current_file_label = None
         self.config_editor = None
         self.config_modified = False
+
+        # Widgets
+        self.current_file_label = None
+        self.modified_label = None
+        self.context_menu = None
 
     def create_tab(self) -> ttk.Frame:
         """Create the config editor tab."""
@@ -70,33 +74,72 @@ class ConfigEditorTab(AbstractTab):
         self.modified_label.pack(side='right')
 
     def _create_editor(self):
-        """Create the text editor."""
+        """Create the text editor with context menu and keyboard shortcuts."""
         editor_frame = ttk.Frame(self.frame)
         editor_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
 
-        # Create text editor with scrollbars
+        # FIX: Enable the undo/redo stack on the text widget
         self.config_editor = self.create_scrolled_text(
             editor_frame,
             wrap=tk.NONE,
             font=('Consolas', 10)
         )
+        self.config_editor.config(undo=True)
         self.config_editor.pack(fill='both', expand=True)
+
+        # Create the right-click context menu
+        self.context_menu = tk.Menu(self.config_editor, tearoff=0)
+        # FIX: Add Undo and Redo to the context menu
+        self.context_menu.add_command(label="Undo", accelerator="Ctrl+Z",
+                                      command=lambda: self.config_editor.event_generate("<<Undo>>"))
+        self.context_menu.add_command(label="Redo", accelerator="Ctrl+Shift+Z",
+                                      command=lambda: self.config_editor.event_generate("<<Redo>>"))
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Cut", accelerator="Ctrl+X",
+                                      command=lambda: self.config_editor.event_generate("<<Cut>>"))
+        self.context_menu.add_command(label="Copy", accelerator="Ctrl+C",
+                                      command=lambda: self.config_editor.event_generate("<<Copy>>"))
+        self.context_menu.add_command(label="Paste", accelerator="Ctrl+V",
+                                      command=lambda: self.config_editor.event_generate("<<Paste>>"))
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Select All", accelerator="Ctrl+A", command=self._select_all)
 
         # Bind modification events
         self.config_editor.bind('<KeyRelease>', self._on_text_modified)
         self.config_editor.bind('<Button-1>', self._on_text_modified)
 
-        # Bind keyboard shortcuts
+        # Bind context menu and keyboard shortcuts
+        self.config_editor.bind("<Button-3>", self._show_context_menu)
+        self.config_editor.bind("<Control-a>", self._select_all)
+        self.config_editor.bind("<Control-A>", self._select_all)
+
+        # FIX: Bind Undo and Redo keyboard shortcuts
+        self.config_editor.bind("<Control-z>", lambda e: self.config_editor.event_generate("<<Undo>>"))
+        self.config_editor.bind("<Control-Z>", lambda e: self.config_editor.event_generate("<<Undo>>"))
+        self.config_editor.bind("<Control-Shift-z>", lambda e: self.config_editor.event_generate("<<Redo>>"))
+        self.config_editor.bind("<Control-Shift-Z>", lambda e: self.config_editor.event_generate("<<Redo>>"))
+
+        # File operation shortcuts
         self.config_editor.bind('<Control-s>', lambda e: self._save_config_file())
         self.config_editor.bind('<Control-o>', lambda e: self._load_config_file())
         self.config_editor.bind('<Control-n>', lambda e: self._new_config_file())
 
-        # Add line numbers (simple implementation)
-        self.config_editor.bind('<KeyRelease>', self._update_line_numbers)
-        self.config_editor.bind('<Button-1>', self._update_line_numbers)
+    def _show_context_menu(self, event):
+        """Display the context menu at the cursor's position."""
+        self.context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _select_all(self, event=None):
+        """Select all text in the editor."""
+        self.config_editor.tag_add('sel', '1.0', 'end-1c')
+        return "break"
 
     def _on_text_modified(self, event=None):
         """Handle text modification events."""
+        # The undo/redo stack generates a modification event, so we ignore it
+        # if the event type is a virtual event (like <<Undo>> or <<Redo>>)
+        if event and event.type == tk.EventType.VirtualEvent:
+            return
+
         if not self.config_modified:
             self.config_modified = True
             self._update_title()
@@ -121,16 +164,15 @@ class ConfigEditorTab(AbstractTab):
 
     def _load_config_file(self):
         """Load a configuration file into the editor."""
-        # Check if current file needs saving
         if self.config_modified:
             response = tk.messagebox.askyesnocancel(
                 "Unsaved Changes",
                 "You have unsaved changes. Do you want to save them first?"
             )
-            if response is True:  # Yes, save first
+            if response is True:
                 if not self._save_config_file():
-                    return  # Save failed, don't proceed
-            elif response is None:  # Cancel
+                    return
+            elif response is None:
                 return
 
         file_path = self.browse_file(
@@ -149,12 +191,11 @@ class ConfigEditorTab(AbstractTab):
                 self.current_config_file = file_path
                 self.config_modified = False
                 self._update_title()
-
+                self.config_editor.edit_reset()  # Clear the undo stack
                 self.logger.info(f"Loaded config file: {file_path}")
 
             except Exception as e:
                 self.show_error("Error", f"Failed to load file: {e}")
-                self.logger.error(f"Failed to load config file {file_path}: {e}")
 
     def _save_config_file(self) -> bool:
         """Save the current configuration."""
@@ -164,12 +205,10 @@ class ConfigEditorTab(AbstractTab):
         try:
             content = self.config_editor.get(1.0, tk.END)
 
-            # Validate JSON before saving
             try:
                 json.loads(content)
             except json.JSONDecodeError as e:
-                if not self.ask_yes_no("Invalid JSON",
-                                       f"The JSON is invalid: {e}\n\nDo you want to save anyway?"):
+                if not self.ask_yes_no("Invalid JSON", f"The JSON is invalid: {e}\n\nDo you want to save anyway?"):
                     return False
 
             with open(self.current_config_file, 'w') as f:
@@ -183,7 +222,6 @@ class ConfigEditorTab(AbstractTab):
 
         except Exception as e:
             self.show_error("Error", f"Failed to save file: {e}")
-            self.logger.error(f"Failed to save config file: {e}")
             return False
 
     def _save_config_as(self) -> bool:
@@ -199,12 +237,10 @@ class ConfigEditorTab(AbstractTab):
             try:
                 content = self.config_editor.get(1.0, tk.END)
 
-                # Validate JSON before saving
                 try:
                     json.loads(content)
                 except json.JSONDecodeError as e:
-                    if not self.ask_yes_no("Invalid JSON",
-                                           f"The JSON is invalid: {e}\n\nDo you want to save anyway?"):
+                    if not self.ask_yes_no("Invalid JSON", f"The JSON is invalid: {e}\n\nDo you want to save anyway?"):
                         return False
 
                 with open(file_path, 'w') as f:
@@ -219,40 +255,28 @@ class ConfigEditorTab(AbstractTab):
 
             except Exception as e:
                 self.show_error("Error", f"Failed to save file: {e}")
-                self.logger.error(f"Failed to save config file as {file_path}: {e}")
                 return False
-
         return False
 
     def _new_config_file(self):
         """Create a new configuration file."""
-        # Check if current file needs saving
         if self.config_modified:
             response = tk.messagebox.askyesnocancel(
                 "Unsaved Changes",
                 "You have unsaved changes. Do you want to save them first?"
             )
-            if response is True:  # Yes, save first
+            if response is True:
                 if not self._save_config_file():
-                    return  # Save failed, don't proceed
-            elif response is None:  # Cancel
+                    return
+            elif response is None:
                 return
 
         template = {
-            "max_open_trades": 3,
-            "stake_currency": "USDT",
-            "stake_amount": 100,
-            "tradable_balance_ratio": 0.99,
-            "fiat_display_currency": "USD",
-            "timeframe": "5m",
-            "dry_run": True,
-            "dry_run_wallet": 1000,
+            "max_open_trades": 3, "stake_currency": "USDT", "stake_amount": 100,
+            "tradable_balance_ratio": 0.99, "fiat_display_currency": "USD",
+            "timeframe": "5m", "dry_run": True, "dry_run_wallet": 1000,
             "cancel_open_orders_on_exit": False,
-            "exchange": {
-                "name": "binance",
-                "pair_whitelist": ["BTC/USDT", "ETH/USDT"],
-                "pair_blacklist": []
-            },
+            "exchange": {"name": "binance", "pair_whitelist": ["BTC/USDT", "ETH/USDT"], "pair_blacklist": []},
             "pairlists": [{"method": "StaticPairList"}]
         }
 
@@ -261,7 +285,7 @@ class ConfigEditorTab(AbstractTab):
         self.current_config_file = None
         self.config_modified = False
         self._update_title()
-
+        self.config_editor.edit_reset()
         self.logger.info("Created new config file from template")
 
     def _validate_config_json(self):
@@ -269,12 +293,10 @@ class ConfigEditorTab(AbstractTab):
         try:
             content = self.config_editor.get(1.0, tk.END)
             is_valid, error_message = self.validate_json_text(content)
-
             if is_valid:
                 self.show_info("Validation", "JSON is valid!")
             else:
                 self.show_error("Validation Error", f"Invalid JSON: {error_message}")
-
         except Exception as e:
             self.show_error("Error", f"Validation failed: {e}")
 
@@ -283,44 +305,34 @@ class ConfigEditorTab(AbstractTab):
         try:
             content = self.config_editor.get(1.0, tk.END)
             is_valid, error_message = self.validate_json_text(content)
-
             if is_valid:
                 parsed_json = json.loads(content)
                 formatted_json = json.dumps(parsed_json, indent=2, sort_keys=False)
-
-                # Save cursor position
                 cursor_pos = self.config_editor.index(tk.INSERT)
-
-                # Replace content
                 self.config_editor.delete(1.0, tk.END)
                 self.config_editor.insert(1.0, formatted_json)
-
-                # Restore cursor position (approximately)
                 try:
                     self.config_editor.mark_set(tk.INSERT, cursor_pos)
                 except tk.TclError:
-                    pass  # Cursor position might be invalid after formatting
-
+                    pass
                 self._on_text_modified()
                 self.show_info("Success", "JSON formatted successfully!")
             else:
                 self.show_error("Format Error", f"Cannot format invalid JSON: {error_message}")
-
         except Exception as e:
             self.show_error("Error", f"Formatting failed: {e}")
 
     def _load_template(self):
         """Load a configuration template."""
-        # Check if current file needs saving
         if self.config_modified:
             response = tk.messagebox.askyesnocancel(
                 "Unsaved Changes",
                 "You have unsaved changes. Do you want to save them first?"
             )
-            if response is True:  # Yes, save first
+            if response is True:
                 if not self._save_config_file():
-                    return  # Save failed, don't proceed
-            elif response is None:  # Cancel
+                    return
+            elif response is None:
                 return
 
         template_path = self.browse_file(
@@ -328,7 +340,6 @@ class ConfigEditorTab(AbstractTab):
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
             initialdir="resources"
         )
-
         if template_path:
             try:
                 template_data = self.load_json_file(template_path)
@@ -338,18 +349,10 @@ class ConfigEditorTab(AbstractTab):
                     self.current_config_file = None
                     self.config_modified = False
                     self._update_title()
-
+                    self.config_editor.edit_reset()
                     self.logger.info(f"Loaded template: {template_path}")
-
             except Exception as e:
                 self.show_error("Error", f"Failed to load template: {e}")
-                self.logger.error(f"Failed to load template {template_path}: {e}")
-
-    def _update_line_numbers(self, event=None):
-        """Update line numbers (placeholder for future implementation)."""
-        # This is a placeholder for line number functionality
-        # Could be implemented with a separate text widget for line numbers
-        pass
 
     def get_current_config_text(self) -> str:
         """Get the current configuration text."""
@@ -361,6 +364,7 @@ class ConfigEditorTab(AbstractTab):
         self.config_editor.insert(1.0, content)
         self.config_modified = False
         self._update_title()
+        self.config_editor.edit_reset()
 
     def is_modified(self) -> bool:
         """Check if the configuration has been modified."""
@@ -372,25 +376,17 @@ class ConfigEditorTab(AbstractTab):
 
     def refresh_data(self):
         """Refresh data (not applicable for config editor)."""
-        # Config editor doesn't need to refresh external data
         pass
 
     def insert_config_snippet(self, snippet: dict, description: str = ""):
         """Insert a configuration snippet at the cursor position."""
         try:
             snippet_text = json.dumps(snippet, indent=2)
-
-            # Get current cursor position
             cursor_pos = self.config_editor.index(tk.INSERT)
-
-            # Insert snippet
             self.config_editor.insert(cursor_pos, snippet_text)
-
             self._on_text_modified()
-
             if description:
                 self.show_info("Snippet Inserted", f"Inserted {description}")
-
         except Exception as e:
             self.show_error("Error", f"Failed to insert snippet: {e}")
 
@@ -398,14 +394,8 @@ class ConfigEditorTab(AbstractTab):
         """Find text in the editor."""
         try:
             start_pos = self.config_editor.index(tk.INSERT)
-
-            if case_sensitive:
-                pos = self.config_editor.search(search_text, start_pos, tk.END)
-            else:
-                pos = self.config_editor.search(search_text, start_pos, tk.END, nocase=True)
-
+            pos = self.config_editor.search(search_text, start_pos, tk.END, nocase=not case_sensitive)
             if pos:
-                # Select found text
                 end_pos = f"{pos}+{len(search_text)}c"
                 self.config_editor.mark_set(tk.INSERT, pos)
                 self.config_editor.selection_clear()
@@ -415,7 +405,6 @@ class ConfigEditorTab(AbstractTab):
             else:
                 self.show_info("Search", f"Text '{search_text}' not found")
                 return False
-
         except Exception as e:
             self.show_error("Error", f"Search failed: {e}")
             return False
@@ -424,41 +413,26 @@ class ConfigEditorTab(AbstractTab):
         """Replace text in the editor."""
         try:
             if replace_all:
-                # Replace all occurrences
                 content = self.config_editor.get(1.0, tk.END)
-                new_content = content.replace(search_text, replace_text)
-
-                if content != new_content:
+                new_content, count = content.replace(search_text, replace_text), content.count(search_text)
+                if count > 0:
                     self.config_editor.delete(1.0, tk.END)
                     self.config_editor.insert(1.0, new_content)
                     self._on_text_modified()
-
-                    # Count replacements
-                    count = content.count(search_text)
                     self.show_info("Replace", f"Replaced {count} occurrence(s)")
-                    return count
                 else:
                     self.show_info("Replace", "No occurrences found")
-                    return 0
+                return count
             else:
-                # Replace current selection or find next
                 try:
-                    selected_text = self.config_editor.get(tk.SEL_FIRST, tk.SEL_LAST)
-                    if selected_text == search_text:
-                        # Replace selected text
+                    if self.config_editor.get(tk.SEL_FIRST, tk.SEL_LAST) == search_text:
                         self.config_editor.delete(tk.SEL_FIRST, tk.SEL_LAST)
                         self.config_editor.insert(tk.INSERT, replace_text)
                         self._on_text_modified()
                         return 1
                 except tk.TclError:
-                    pass  # No selection
-
-                # Find next occurrence
-                if self.find_text(search_text):
-                    return 0  # Found but not replaced
-                else:
-                    return 0  # Not found
-
+                    pass
+                return 1 if self.find_text(search_text) else 0
         except Exception as e:
             self.show_error("Error", f"Replace failed: {e}")
             return 0

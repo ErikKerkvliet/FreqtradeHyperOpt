@@ -1,30 +1,94 @@
-# FreqTrade Backtest Database Integration
+# FreqTrade Results Database - Simplified Schema
 
 ## Overview
 
-This enhancement adds comprehensive database storage and analysis capabilities for FreqTrade backtest results, complementing the existing optimization result storage. The system now tracks both hyperparameter optimization and backtest performance in a unified database structure.
+The FreqTrade optimization system uses a simplified two-table database structure designed for efficient storage and analysis of hyperparameter optimization and backtesting results. This streamlined approach focuses on the essential data needed for performance analysis and reality gap detection.
 
-## New Database Tables
+## Database Schema
 
-### 1. `strategy_backtests`
-Main table storing backtest results and metadata:
+### Core Tables
+
+#### 1. `hyperopt_results`
+Main table storing hyperparameter optimization results:
 
 ```sql
-CREATE TABLE strategy_backtests (
+CREATE TABLE hyperopt_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- Basic info
     strategy_name VARCHAR(100) NOT NULL,
-    backtest_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'completed',
+
     -- Configuration
     max_open_trades INTEGER,
     timeframe VARCHAR(10) NOT NULL,
     stake_amount DECIMAL(10, 8),
     stake_currency VARCHAR(10),
     timerange VARCHAR(50),
-    pair_whitelist TEXT,
-    pair_blacklist TEXT,
+    pair_whitelist TEXT,  -- JSON array
     exchange_name VARCHAR(50),
-    
+
+    -- Hyperopt Settings
+    hyperopt_function VARCHAR(100),
+    epochs INTEGER,
+    spaces TEXT,  -- JSON array of spaces
+    run_number INTEGER DEFAULT 1,
+
+    -- Performance Metrics
+    total_profit_pct DECIMAL(10, 4),
+    total_profit_abs DECIMAL(15, 8),
+    total_trades INTEGER,
+    win_rate DECIMAL(5, 2),
+    avg_profit_pct DECIMAL(10, 4),
+    max_drawdown_pct DECIMAL(10, 4),
+
+    -- Advanced Metrics
+    sharpe_ratio DECIMAL(10, 4),
+    calmar_ratio DECIMAL(10, 4),
+    sortino_ratio DECIMAL(10, 4),
+    profit_factor DECIMAL(10, 4),
+    expectancy DECIMAL(10, 6),
+
+    -- Trade Statistics
+    winning_trades INTEGER,
+    losing_trades INTEGER,
+    draw_trades INTEGER,
+
+    -- File References and Raw Data
+    config_file_path VARCHAR(255),
+    hyperopt_result_file_path VARCHAR(255),
+    config_json TEXT,  -- Full config as JSON
+    hyperopt_json TEXT,  -- Full hyperopt result as JSON
+    raw_output TEXT,  -- Raw command output
+
+    -- Meta Information
+    optimization_duration_seconds INTEGER,
+    session_info TEXT  -- JSON with session metadata
+);
+```
+
+#### 2. `backtest_results`
+Table storing backtest validation results:
+
+```sql
+CREATE TABLE backtest_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- Basic info
+    strategy_name VARCHAR(100) NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'completed',
+
+    -- Configuration
+    max_open_trades INTEGER,
+    timeframe VARCHAR(10) NOT NULL,
+    stake_amount DECIMAL(10, 8),
+    stake_currency VARCHAR(10),
+    timerange VARCHAR(50),
+    pair_whitelist TEXT,  -- JSON array
+    exchange_name VARCHAR(50),
+
     -- Performance Metrics
     total_profit_pct DECIMAL(10, 4),
     total_profit_abs DECIMAL(15, 8),
@@ -33,14 +97,14 @@ CREATE TABLE strategy_backtests (
     avg_profit_pct DECIMAL(10, 4),
     max_drawdown_pct DECIMAL(10, 4),
     max_drawdown_abs DECIMAL(15, 8),
-    
+
     -- Advanced Metrics
     sharpe_ratio DECIMAL(10, 4),
     calmar_ratio DECIMAL(10, 4),
     sortino_ratio DECIMAL(10, 4),
     profit_factor DECIMAL(10, 4),
     expectancy DECIMAL(10, 6),
-    
+
     -- Trade Statistics
     winning_trades INTEGER,
     losing_trades INTEGER,
@@ -48,371 +112,305 @@ CREATE TABLE strategy_backtests (
     best_trade_pct DECIMAL(10, 4),
     worst_trade_pct DECIMAL(10, 4),
     avg_trade_duration VARCHAR(50),
-    
-    -- File References
+
+    -- File References and Raw Data
     config_file_path VARCHAR(255),
     backtest_result_file_path VARCHAR(255),
-    
+    config_json TEXT,  -- Full config as JSON
+    backtest_json TEXT,  -- Full backtest result as JSON
+    raw_output TEXT,  -- Raw command output
+    trades_json TEXT,  -- Individual trades as JSON (optional)
+
     -- Meta Information
     backtest_duration_seconds INTEGER,
-    status VARCHAR(20) DEFAULT 'completed',
-    optimization_id INTEGER,  -- Link to optimization result
-    session_id INTEGER,       -- Link to backtest session
-    
-    FOREIGN KEY (optimization_id) REFERENCES strategy_optimizations(id),
-    FOREIGN KEY (session_id) REFERENCES backtest_sessions(id)
+    hyperopt_id INTEGER,  -- Optional link to hyperopt result
+    session_info TEXT,  -- JSON with session metadata
+
+    FOREIGN KEY (hyperopt_id) REFERENCES hyperopt_results(id)
 );
 ```
 
-### 2. `backtest_sessions`
-Groups related backtest runs:
+### Indexes
+
+The database includes performance indexes for common query patterns:
 
 ```sql
-CREATE TABLE backtest_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    total_strategies INTEGER,
-    successful_backtests INTEGER,
-    failed_backtests INTEGER,
-    session_duration_seconds INTEGER,
-    
-    exchange_name VARCHAR(50),
-    timeframe VARCHAR(10),
-    timerange VARCHAR(50),
-    
-    optimization_session_id INTEGER,  -- Link to related optimization session
-    FOREIGN KEY (optimization_session_id) REFERENCES optimization_sessions(id)
-);
+-- Hyperopt indexes
+CREATE INDEX idx_hyperopt_strategy_profit ON hyperopt_results(strategy_name, total_profit_pct);
+CREATE INDEX idx_hyperopt_timeframe_profit ON hyperopt_results(timeframe, total_profit_pct);
+CREATE INDEX idx_hyperopt_timestamp ON hyperopt_results(timestamp);
+CREATE INDEX idx_hyperopt_status ON hyperopt_results(status);
+
+-- Backtest indexes
+CREATE INDEX idx_backtest_strategy_profit ON backtest_results(strategy_name, total_profit_pct);
+CREATE INDEX idx_backtest_timeframe_profit ON backtest_results(timeframe, total_profit_pct);
+CREATE INDEX idx_backtest_timestamp ON backtest_results(timestamp);
+CREATE INDEX idx_backtest_hyperopt ON backtest_results(hyperopt_id);
+CREATE INDEX idx_backtest_status ON backtest_results(status);
 ```
 
-### 3. `backtest_trades`
-Detailed individual trade records:
+## Key Features
+
+### 1. **Simplified Architecture**
+- Only two main tables instead of complex multi-table schemas
+- Embedded JSON for configuration and detailed results
+- Direct foreign key relationship between backtests and hyperopt runs
+
+### 2. **Reality Gap Analysis**
+The database structure enables easy comparison between optimization and backtest results:
 
 ```sql
-CREATE TABLE backtest_trades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    backtest_id INTEGER NOT NULL,
-    pair VARCHAR(20) NOT NULL,
-    
-    open_timestamp DATETIME,
-    close_timestamp DATETIME,
-    open_rate DECIMAL(15, 8),
-    close_rate DECIMAL(15, 8),
-    amount DECIMAL(15, 8),
-    
-    profit_pct DECIMAL(10, 4),
-    profit_abs DECIMAL(15, 8),
-    trade_duration INTEGER,
-    
-    exit_reason VARCHAR(50),
-    is_open BOOLEAN DEFAULT FALSE,
-    
-    FOREIGN KEY (backtest_id) REFERENCES strategy_backtests(id) ON DELETE CASCADE
-);
+SELECT 
+    h.strategy_name,
+    h.total_profit_pct as hyperopt_profit,
+    b.total_profit_pct as backtest_profit,
+    (h.total_profit_pct - b.total_profit_pct) as reality_gap
+FROM hyperopt_results h
+LEFT JOIN backtest_results b ON h.id = b.hyperopt_id
+WHERE h.status = 'completed'
+ORDER BY ABS(h.total_profit_pct - COALESCE(b.total_profit_pct, 0)) DESC;
 ```
 
-## Enhanced Features
+### 3. **Session Tracking**
+Session information is stored as JSON in the `session_info` field:
 
-### 1. BacktestResult Data Class
+```json
+{
+    "session_name": "OptSession_20241216_143022",
+    "start_time": "2024-12-16T14:30:22",
+    "exchange": "binance",
+    "timeframe": "5m",
+    "timerange": "20231216-",
+    "hyperopt_function": "SharpeHyperOptLoss",
+    "epochs": 200,
+    "strategies_processed": 5,
+    "strategies_successful": 4,
+    "duration_seconds": 3600
+}
+```
 
+### 4. **Comprehensive Metrics**
+Both tables store essential performance metrics:
+- **Profit Metrics**: Total profit %, absolute profit, average profit
+- **Risk Metrics**: Maximum drawdown, Sharpe ratio, Calmar ratio, Sortino ratio
+- **Trade Statistics**: Win rate, total trades, best/worst trades
+- **Advanced Analytics**: Profit factor, expectancy
+
+## Data Classes
+
+### HyperoptResult
 ```python
 @dataclass
-class BacktestResult:
-    strategy_name: str
-    total_profit_pct: float
-    total_profit_abs: float
-    total_trades: int
-    win_rate: float
-    avg_profit_pct: float
-    max_drawdown_pct: float
-    sharpe_ratio: float
-    calmar_ratio: float
-    sortino_ratio: float
-    profit_factor: float
-    expectancy: float
-    config_data: Dict[str, Any]
+class HyperoptResult(TradingResult):
+    # Hyperopt specific
+    hyperopt_function: str
+    epochs: int
+    spaces: List[str]
+    
+    # Metadata
+    hyperopt_json_data: Dict[str, Any]
+    optimization_duration: int
+    run_number: int = 1
+```
+
+### BacktestResult
+```python
+@dataclass
+class BacktestResult(TradingResult):
+    max_drawdown_abs: float
+    
+    # Trade statistics
+    winning_trades: int
+    losing_trades: int
+    draw_trades: int
+    best_trade_pct: float
+    worst_trade_pct: float
+    avg_trade_duration: str
+    
+    # File references
     backtest_results: Dict[str, Any]
     backtest_duration: int
-    timeframe: str
-    timerange: str
-    stake_currency: str
-    stake_amount: float
-    max_open_trades: int
+    
+    # Optional link to optimization
+    hyperopt_id: Optional[int] = None
 ```
-
-### 2. Enhanced FreqTrade Executor
-
-The `FreqTradeExecutor` now supports:
-
-- **Backtest Execution**: `run_backtest()` method with database integration
-- **Batch Backtesting**: `batch_backtest_from_session()` for testing all optimizations from a session
-- **Configuration Linking**: `run_strategy_backtest_from_optimization()` to test optimized parameters
-- **Session Management**: Separate backtest sessions with links to optimization sessions
-
-### 3. Enhanced Results Analyzer
-
-New analysis capabilities:
-
-```bash
-# Show best backtest results
-python enhanced_result_analyzer.py best --type backtest --limit 10
-
-# Compare optimization vs backtest results
-python enhanced_result_analyzer.py vs RSIStrategy
-
-# Analyze reality gap (overfitting detection)
-python enhanced_result_analyzer.py gap --strategy RSIStrategy
-
-# Show detailed trade analysis
-python enhanced_result_analyzer.py trades 123
-
-# Show backtest sessions
-python enhanced_result_analyzer.py sessions --type backtest
-```
-
-### 4. Backtest Runner CLI
-
-New standalone CLI for running backtests:
-
-```bash
-# Run single backtest
-python backtest_runner.py single RSIStrategy config.json --timerange 20240101-20240201
-
-# Run backtest from optimization result
-python backtest_runner.py from-opt 123
-
-# Batch backtest all strategies from optimization session
-python backtest_runner.py batch 15 --limit 5
-
-# List available optimizations for backtesting
-python backtest_runner.py list-opts
-
-# List available sessions for batch backtesting
-python backtest_runner.py list-sessions
-```
-
-## Key Benefits
-
-### 1. **Reality Gap Analysis**
-- Compare optimization results with backtest performance
-- Detect overfitting and unrealistic expectations
-- Track the difference between in-sample and out-of-sample performance
-
-### 2. **Comprehensive Trade Analysis**
-- Store individual trade details for deep analysis
-- Analyze performance by trading pair
-- Understand exit reasons and trade duration patterns
-
-### 3. **Session Linking**
-- Link backtest sessions to optimization sessions
-- Track the full workflow from optimization to validation
-- Maintain audit trail of parameter evolution
-
-### 4. **Advanced Metrics**
-- Store Sharpe, Calmar, and Sortino ratios
-- Track profit factor and expectancy
-- Monitor drawdown patterns and trade distribution
-
-### 5. **Batch Operations**
-- Automatically backtest all optimized strategies
-- Compare multiple strategies systematically
-- Generate comprehensive performance reports
 
 ## Usage Examples
 
-### Example 1: Basic Backtest with Database Storage
-
-```python
-from modules.freqtrade_executor import FreqTradeExecutor
-from modules.optimization_config import OptimizationConfig
-
-# Initialize executor
-config = OptimizationConfig(...)
-executor = FreqTradeExecutor(config)
-
-# Start backtest session
-session_id = executor.start_backtest_session()
-
-# Run backtest
-result = executor.run_backtest(
-    strategy_name="RSIStrategy",
-    config_file="config.json",
-    timerange="20240101-20240201"
-)
-
-if result.success:
-    print(f"Backtest completed! Database ID: {result.backtest_id}")
-```
-
-### Example 2: Batch Backtest from Optimization Session
-
-```python
-# Run backtests for top 5 strategies from optimization session 15
-results = executor.batch_backtest_from_session(session_id=15, limit=5)
-
-successful = sum(1 for r in results if r.success)
-print(f"Completed {successful}/{len(results)} backtests successfully")
-```
-
-### Example 3: Reality Gap Analysis
-
-```python
-from modules.enhanced_result_analyzer import EnhancedResultsAnalyzer
-
-analyzer = EnhancedResultsAnalyzer()
-
-# Analyze reality gap for specific strategy
-analyzer.show_reality_gap_analysis("RSIStrategy")
-
-# Compare optimization vs backtest for all strategies
-analyzer.show_optimization_vs_backtest_comparison("RSIStrategy")
-```
-
-### Example 4: Trade-Level Analysis
-
-```python
-# Get detailed trade analysis for a backtest
-trade_analysis = db_manager.get_backtest_trade_analysis(backtest_id=123)
-
-print(f"Total trades: {trade_analysis['trade_stats']['total_trades']}")
-print(f"Best performing pair: {trade_analysis['trades_by_pair'][0]['pair']}")
-print(f"Most common exit reason: {trade_analysis['exit_reasons'][0]['exit_reason']}")
-```
-
-## Database Queries
-
-### Find Strategies with Consistent Performance
+### Finding Best Performing Strategies
 
 ```sql
-SELECT 
-    so.strategy_name,
-    AVG(so.total_profit_pct) as avg_opt_profit,
-    AVG(sb.total_profit_pct) as avg_bt_profit,
-    (AVG(so.total_profit_pct) - AVG(sb.total_profit_pct)) as reality_gap,
-    COUNT(sb.id) as backtest_count
-FROM strategy_optimizations so
-JOIN strategy_backtests sb ON sb.optimization_id = so.id
-WHERE so.status = 'completed' AND sb.status = 'completed'
-GROUP BY so.strategy_name
-HAVING backtest_count >= 3
-ORDER BY reality_gap ASC;
-```
-
-### Top Performing Backtests by Sharpe Ratio
-
-```sql
-SELECT 
-    strategy_name,
-    total_profit_pct,
-    sharpe_ratio,
-    calmar_ratio,
-    total_trades,
-    timeframe
-FROM strategy_backtests
-WHERE status = 'completed' 
-  AND total_trades >= 20
-  AND sharpe_ratio IS NOT NULL
-ORDER BY sharpe_ratio DESC
+-- Top 10 hyperopt strategies
+SELECT strategy_name, total_profit_pct, total_trades, win_rate, sharpe_ratio
+FROM hyperopt_results 
+WHERE status = 'completed' AND total_trades >= 10
+ORDER BY total_profit_pct DESC 
 LIMIT 10;
 ```
 
-### Trade Analysis by Pair
+### Reality Gap Analysis
 
 ```sql
+-- Strategies with highest overfitting risk
 SELECT 
-    bt.pair,
-    COUNT(btr.id) as trade_count,
-    AVG(btr.profit_pct) as avg_profit_pct,
-    SUM(btr.profit_abs) as total_profit,
-    AVG(btr.trade_duration) as avg_duration_minutes
-FROM strategy_backtests bt
-JOIN backtest_trades btr ON bt.id = btr.backtest_id
-WHERE bt.strategy_name = 'RSIStrategy'
-GROUP BY bt.pair
-ORDER BY total_profit DESC;
+    h.strategy_name,
+    h.total_profit_pct as opt_profit,
+    b.total_profit_pct as bt_profit,
+    (h.total_profit_pct - b.total_profit_pct) as gap,
+    CASE 
+        WHEN (h.total_profit_pct - b.total_profit_pct) > 5 THEN 'High Overfitting Risk'
+        WHEN (h.total_profit_pct - b.total_profit_pct) < -2 THEN 'Underoptimized'
+        ELSE 'Acceptable'
+    END as assessment
+FROM hyperopt_results h
+JOIN backtest_results b ON h.id = b.hyperopt_id
+WHERE h.status = 'completed' AND b.status = 'completed'
+ORDER BY gap DESC;
+```
+
+### Performance Timeline
+
+```sql
+-- Strategy performance over time
+SELECT 
+    'hyperopt' as type, 
+    id, 
+    timestamp, 
+    total_profit_pct, 
+    total_trades,
+    run_number as details
+FROM hyperopt_results 
+WHERE strategy_name = 'RSIStrategy'
+
+UNION ALL
+
+SELECT 
+    'backtest' as type,
+    id,
+    timestamp,
+    total_profit_pct,
+    total_trades,
+    CAST(hyperopt_id as TEXT) as details
+FROM backtest_results 
+WHERE strategy_name = 'RSIStrategy'
+
+ORDER BY timestamp DESC;
+```
+
+### Session Analysis
+
+```sql
+-- Session performance summary
+SELECT 
+    json_extract(session_info, '$.session_name') as session,
+    json_extract(session_info, '$.start_time') as start_time,
+    COUNT(*) as total_runs,
+    AVG(total_profit_pct) as avg_profit,
+    MAX(total_profit_pct) as best_profit,
+    json_extract(session_info, '$.duration_seconds') as duration
+FROM hyperopt_results 
+WHERE session_info IS NOT NULL
+GROUP BY json_extract(session_info, '$.session_name')
+ORDER BY start_time DESC;
 ```
 
 ## File Organization
 
-The enhanced system maintains the hybrid storage approach:
+The database works in conjunction with a structured file system:
 
 ```
 optimization_results/
 ├── configs/                    # Strategy configurations
-│   ├── 20241216_123456_RSIStrategy_backtest_config.json
-│   └── 20241216_123456_RSIStrategy_run1_config.json
-├── hyperopt_results/          # Optimization results
-│   └── 20241216_123456_RSIStrategy_run1_hyperopt.json
-└── backtest_results/          # New: Backtest results
-    └── 20241216_123456_RSIStrategy_backtest_results.json
+│   ├── 20241216_143022_RSIStrategy_run1_config.json
+│   └── 20241216_143022_RSIStrategy_backtest_config.json
+├── hyperopt_results/          # Detailed hyperopt outputs
+│   └── 20241216_143022_RSIStrategy_run1_hyperopt.json
+└── backtest_results/          # Detailed backtest outputs
+    └── 20241216_143022_RSIStrategy_backtest_results.json
 ```
 
-## Migration Considerations
+## Analysis Tools
 
-### Existing Users
-- The new tables are created automatically on first run
-- Existing optimization data remains unchanged
-- New indexes improve query performance
+### CLI Analyzer
+The system includes a comprehensive CLI analyzer:
 
-### Performance Impact
-- Additional storage for backtest results and trades
-- Minimal impact on optimization workflows
-- Optional trade detail storage (can be disabled)
+```bash
+# Show best performing strategies
+python result_analyzer.py best-hyperopt --limit 10
+
+# Reality gap analysis
+python result_analyzer.py gap --strategy RSIStrategy
+
+# Strategy comparison
+python result_analyzer.py vs RSIStrategy
+
+# Database statistics
+python result_analyzer.py stats
+
+# Export best configurations
+python result_analyzer.py export hyperopt --limit 5
+```
+
+### Backtest Runner
+Dedicated tool for running validation backtests:
+
+```bash
+# Run backtest from hyperopt result
+python backtest_runner.py from-hyperopt 123
+
+# Batch backtest best strategies
+python backtest_runner.py batch --limit 5
+
+# Show untested strategies
+python backtest_runner.py list-untested
+```
+
+## Migration Support
+
+The database manager includes migration support from older schema versions:
+
+```python
+# Migrate from old complex schema
+db_manager.migrate_from_old_schema()
+
+# Cleanup old tables after migration
+db_manager.cleanup_old_tables(confirm=True)
+```
+
+## Performance Considerations
+
+### Optimization Tips
+- **Indexes**: Carefully designed indexes for common query patterns
+- **JSON Storage**: Configuration and detailed results stored as JSON for flexibility
+- **Batch Operations**: Efficient bulk insert operations for multiple optimizations
+- **Foreign Keys**: Proper relationships with foreign key constraints
+
+### Storage Efficiency
+- **Minimal Tables**: Only two main tables reduce complexity
+- **Embedded Data**: JSON fields eliminate need for separate detail tables
+- **Optional Fields**: NULL-able fields for optional data reduce storage
+- **File References**: Large binary data stored as files, referenced by path
 
 ## Best Practices
 
-### 1. **Systematic Validation**
-```python
-# Always backtest your best optimizations
-best_optimizations = db_manager.get_best_strategies(limit=10)
-for opt in best_optimizations:
-    executor.run_strategy_backtest_from_optimization(opt['id'])
-```
+### 1. **Data Integrity**
+- Always use transactions for multi-table operations
+- Validate JSON data before storage
+- Handle missing or null values gracefully
 
-### 2. **Reality Gap Monitoring**
-```python
-# Regularly check for overfitting
-analyzer.show_reality_gap_analysis()
+### 2. **Performance**
+- Use parameterized queries to prevent SQL injection
+- Leverage indexes for filtering and sorting
+- Consider pagination for large result sets
 
-# Alert on high gaps
-if avg_reality_gap > 5.0:
-    print("⚠️ High reality gap detected - review optimization parameters")
-```
+### 3. **Analysis**
+- Compare optimization vs backtest results regularly
+- Monitor reality gap trends over time
+- Use session information for workflow tracking
 
-### 3. **Trade Analysis**
-```python
-# Analyze trade patterns
-for backtest in recent_backtests:
-    trade_analysis = db_manager.get_backtest_trade_analysis(backtest['id'])
-    if trade_analysis['trade_stats']['avg_duration_minutes'] > 1440:  # > 24 hours
-        print(f"Long holding periods detected in {backtest['strategy_name']}")
-```
+### 4. **Maintenance**
+- Regularly backup the database file
+- Monitor database size and performance
+- Archive old results when appropriate
 
-### 4. **Session Organization**
-```python
-# Link backtest sessions to optimization sessions
-opt_session_id = executor.start_session()
-# ... run optimizations ...
-
-bt_session_id = executor.start_backtest_session(
-    optimization_session_id=opt_session_id
-)
-# ... run backtests ...
-```
-
-## Future Enhancements
-
-### Planned Features
-1. **Walk-Forward Analysis**: Time-series validation with rolling windows
-2. **Monte Carlo Simulation**: Statistical robustness testing
-3. **Portfolio Backtesting**: Multi-strategy portfolio analysis
-4. **Risk Metrics**: VaR, CVaR, and other risk measurements
-5. **Benchmark Comparison**: Compare against buy-and-hold strategies
-
-### Integration Opportunities
-1. **GUI Dashboard**: Visual backtest analysis in the existing dashboard
-2. **Automated Alerts**: Notifications for significant performance gaps
-3. **Report Generation**: Automated PDF reports with charts and analysis
-4. **API Endpoints**: REST API for external analysis tools
-
-This backtest database integration provides a comprehensive foundation for systematic strategy validation and performance analysis, helping traders make more informed decisions based on realistic backtesting data.
+This simplified database structure provides a robust foundation for FreqTrade optimization analysis while maintaining performance and ease of use.

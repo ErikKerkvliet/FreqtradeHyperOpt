@@ -250,8 +250,8 @@ class DatabaseManager:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Save config and result files
-            config_dir = Path("optimization_results/configs")
-            hyperopt_dir = Path("optimization_results/hyperopt_results")
+            config_dir = Path("results/configs")
+            hyperopt_dir = Path("results/hyperopt")
             config_dir.mkdir(parents=True, exist_ok=True)
             hyperopt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -313,8 +313,8 @@ class DatabaseManager:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Save config and result files
-            config_dir = Path("optimization_results/configs")
-            backtest_dir = Path("optimization_results/backtest_results")
+            config_dir = Path("results/configs")
+            backtest_dir = Path("results/backtest")
             config_dir.mkdir(parents=True, exist_ok=True)
             backtest_dir.mkdir(parents=True, exist_ok=True)
 

@@ -6,3 +6,5 @@
 .idea/
 optimization_results/
 logs/
+configs/
+app/strategies/

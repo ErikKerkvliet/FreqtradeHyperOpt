@@ -5,6 +5,7 @@ This file contains the main FreqTradeDashboard class that assembles all the tabs
 and manages the overall application state.
 """
 
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
@@ -53,7 +54,7 @@ class FreqTradeDashboard:
         # Create main interface
         self.create_widgets()
 
-        # Initialize executor after GUI is built
+        # Initialize executor after GUI is built - pass the shared db_manager
         self.initialize_executor()
 
         # Setup communication between tabs
@@ -114,7 +115,8 @@ class FreqTradeDashboard:
         """Initialize the FreqTrade executor."""
         if self.config and Path(self.config.freqtrade_path).exists():
             try:
-                self.executor = FreqTradeExecutor(self.config, self.logger)
+                # Pass the shared db_manager to avoid duplicate initialization
+                self.executor = FreqTradeExecutor(self.config, self.logger, self.db_manager)
             except Exception as e:
                 self.logger.error(f"Failed to initialize executor: {e}")
                 messagebox.showerror("Executor Error", f"Failed to initialize FreqTrade executor: {e}")
@@ -149,7 +151,7 @@ class FreqTradeDashboard:
             'get_executor': lambda: self.executor,
             'get_freqtrade_path': lambda: self.freqtrade_path,
             'refresh_results_data': self.results_tab.refresh_data,
-            'show_download_dialog': self.show_download_data_dialog,
+            'show_download_dialog': self.show_download_data_dialog,  # Updated to accept config_data parameter
         }
 
         # Set these callbacks for each tab
@@ -164,7 +166,6 @@ class FreqTradeDashboard:
                 output_callback=self.execution_tab.append_output,
                 completion_callback=self.execution_tab._on_execution_complete
             )
-
     def refresh_all_data(self):
         """Refresh the data in all tabs."""
         for tab in [self.results_tab, self.data_tab, self.config_tab, self.execution_tab, self.logs_tab]:
@@ -173,11 +174,12 @@ class FreqTradeDashboard:
             except Exception as e:
                 self.logger.error(f"Error refreshing tab {tab.__class__.__name__}: {e}")
 
-    def show_download_data_dialog(self):
-        """Open a dialog to download new market data."""
+    def show_download_data_dialog(self, config_data: dict = None):
+        """Open a dialog to download new market data with optional pre-filled config data."""
         dialog = tk.Toplevel(self.root)
         dialog.title("Download Data")
-        dialog.geometry("450x343")
+        window_height = "367" if config_data else "343"
+        dialog.geometry(f"450x{window_height}")
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
@@ -185,17 +187,46 @@ class FreqTradeDashboard:
         main_frame = ttk.Frame(dialog, padding=20)
         main_frame.pack(fill='both', expand=True)
 
+        # Pre-fill from config_data if available, otherwise use defaults
+        default_exchange = "binance"
+        default_pairs = "BTC/USDT,ETH/USDT"
+        default_timeframes = ['5m', '1h']
+
+        if config_data:
+            default_exchange = config_data.get('exchange', default_exchange)
+            if config_data.get('pairs'):
+                default_pairs = ",".join(config_data['pairs'])
+            if config_data.get('timeframe'):
+                # If config has a specific timeframe, pre-select it and similar ones
+                config_tf = config_data['timeframe']
+                if config_tf in ['1m', '5m', '15m', '30m']:
+                    default_timeframes = ['1m', '5m', '15m']
+                elif config_tf in ['1h', '4h']:
+                    default_timeframes = ['1h', '4h']
+                elif config_tf == '1d':
+                    default_timeframes = ['1d']
+                else:
+                    default_timeframes = [config_tf] if config_tf in ['1m', '5m', '15m', '30m', '1h', '4h', '1d'] else [
+                        '5m', '1h']
+
         # Exchange
         ttk.Label(main_frame, text="Exchange:").pack(anchor='w')
-        exchange_var = tk.StringVar(value=self.config.exchange if self.config else "binance")
+        exchange_var = tk.StringVar(value=default_exchange)
         exchange_combo = ttk.Combobox(main_frame, textvariable=exchange_var)
         exchange_combo['values'] = ['binance', 'kraken', 'coinbase', 'bittrex', 'okx']
         exchange_combo.pack(fill='x', pady=(0, 10))
 
         # Pairs
         ttk.Label(main_frame, text="Trading Pairs (comma-separated):").pack(anchor='w')
-        pairs_var = tk.StringVar(value=",".join(self.config.pairs) if self.config else "BTC/USDT,ETH/USDT")
-        ttk.Entry(main_frame, textvariable=pairs_var).pack(fill='x', pady=(0, 10))
+        pairs_var = tk.StringVar(value=default_pairs)
+        pairs_entry = ttk.Entry(main_frame, textvariable=pairs_var)
+        pairs_entry.pack(fill='x', pady=(0, 10))
+
+        # Add helpful text if config was used
+        if config_data:
+            help_label = ttk.Label(main_frame, text="✓ Pre-filled from selected config file",
+                                   foreground='green', font=('TkDefaultFont', 8))
+            help_label.pack(anchor='w', pady=(0, 5))
 
         # Timeframes
         ttk.Label(main_frame, text="Timeframes:").pack(anchor='w')
@@ -203,8 +234,9 @@ class FreqTradeDashboard:
         timeframes_frame.pack(fill='x', pady=(0, 10))
         timeframe_vars = {}
         timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+
         for i, tf in enumerate(timeframes):
-            var = tk.BooleanVar(value=(tf in ['5m', '1h']))
+            var = tk.BooleanVar(value=(tf in default_timeframes))
             timeframe_vars[tf] = var
             ttk.Checkbutton(timeframes_frame, text=tf, variable=var).grid(row=i // 4, column=i % 4, sticky='w',
                                                                           padx=(0, 10))
@@ -238,6 +270,7 @@ class FreqTradeDashboard:
 
             # Switch to execution tab and run download
             self.notebook.select(3)
+            import threading
             threading.Thread(
                 target=self.executor.download_data,
                 args=(exchange_var.get(), pairs, selected_timeframes),

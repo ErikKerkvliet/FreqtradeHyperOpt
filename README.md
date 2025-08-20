@@ -1,151 +1,267 @@
 # FreqTrade Hyperparameter Optimization Automation
 
-A comprehensive Python application that automates the hyperparameter optimization process for multiple FreqTrade strategies with advanced database storage and analysis capabilities.
+A comprehensive Python application that automates the hyperparameter optimization process for multiple FreqTrade strategies with advanced database storage, reality gap analysis, and a modern GUI dashboard.
 
-## Features
+## 🚀 Features
 
+### Core Functionality
 - ✅ **Automated Environment Setup**: Reads configuration from `.env` file and activates FreqTrade virtual environment
 - ✅ **Data Management**: Downloads trading data for all specified pairs automatically
 - ✅ **Multi-Strategy Processing**: Iterates through all strategy files in the strategies folder
 - ✅ **Triple Optimization**: Runs hyperparameter optimization 3 times for each strategy for better results
-- ✅ **Database Storage**: Stores optimization results in SQLite database for fast querying and analysis
-- ✅ **Hybrid File Storage**: Combines database metadata with detailed JSON file storage
-- ✅ **Advanced Analytics**: Query, compare, and analyze optimization results with built-in tools
-- ✅ **Smart Results Export**: Exports best results with profit percentage naming
+- ✅ **Validation Backtesting**: Automated backtesting of optimized strategies to detect overfitting
+
+### Database & Analytics
+- ✅ **Simplified Database**: Efficient two-table SQLite structure for hyperopt and backtest results
+- ✅ **Reality Gap Analysis**: Compare optimization vs backtest performance to detect overfitting
+- ✅ **Advanced Metrics**: Sharpe, Calmar, Sortino ratios, profit factor, expectancy tracking
 - ✅ **Session Tracking**: Groups optimization runs and tracks overall performance
+- ✅ **Performance Timeline**: Track strategy evolution across multiple optimization sessions
+
+### User Interfaces
+- ✅ **Modern GUI Dashboard**: Tkinter-based interface with tabbed organization
+- ✅ **CLI Tools**: Comprehensive command-line analyzers and runners
+- ✅ **Results Export**: Export best configurations with profit percentage naming
+- ✅ **Interactive Analysis**: Query, compare, and analyze results with built-in tools
+
+### Technical Features
 - ✅ **Robust Error Handling**: Gracefully handles errors and provides detailed logging
 - ✅ **Cross-Platform Support**: Works on both Windows and Unix/Linux systems
 - ✅ **Progress Tracking**: Real-time progress indicators and comprehensive logging
-- ✅ **Summary Reports**: Detailed summary of successful and failed optimizations
+- ✅ **Migration Support**: Migrate from older database schemas
 
-## Installation
+## 📦 Installation
 
-1. **Clone or download the application files**
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Clone or Download
+```bash
+git clone <repository_url>
+cd freqtrade-optimizer
+```
 
-3. **Set up your environment configuration**:
-   - Copy `.env.template` to `.env`
-   - Fill in your specific FreqTrade configuration
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-4. **Ensure your FreqTrade installation is ready**:
-   - FreqTrade should be installed with a virtual environment (`.venv`)
-   - Strategies should be in `user_data/strategies/` directory
-   - The `config_template.json` should be in your project root
-
-## Configuration
-
-### Environment Variables (.env file)
+### 3. Configure Environment
+Copy `.env.template` to `.env` and configure your settings:
 
 ```bash
-# Path to your FreqTrade installation directory
+# FreqTrade Configuration
 FREQTRADE_PATH=/path/to/your/freqtrade
-
-# Exchange configuration
 EXCHANGE=binance
 PAIR_DATA_EXCHANGE=binance
-
-# Trading timeframe
 TIMEFRAME=5m
-
-# Historical data in days (will calculate timerange automatically)
 HISTORICAL_DATA_IN_DAYS=365
 
 # Trading pairs (comma-separated, no spaces around commas)
 PAIRS=BTC/USDT,ETH/USDT,ADA/USDT,DOT/USDT,LINK/USDT
 
-# Hyperopt loss function
+# Hyperopt configuration
 HYPERFUNCTION=SharpeHyperOptLoss
 ```
 
-### Requirements File
+### 4. Prepare FreqTrade
+Ensure your FreqTrade installation is ready:
+- FreqTrade should be installed with a virtual environment (`.venv`)
+- Strategies should be in `user_data/strategies/` directory
+- The `config_template.json` should be in your project root
 
-```txt
-python-dotenv
-tabulate
+## 🎯 Quick Start
+
+### GUI Dashboard (Recommended)
+```bash
+python app/main_gui.py
 ```
 
-### Directory Structure
+The GUI provides:
+- **Results Analysis**: View and analyze hyperopt and backtest results
+- **Data Management**: Browse and manage downloaded market data
+- **Config Editor**: Edit FreqTrade configurations with syntax highlighting
+- **Execution**: Run optimizations and backtests with real-time output
+- **Logs**: Monitor application logs with filtering and auto-refresh
 
+### Command Line Interface
+```bash
+# Run full optimization workflow
+python app/main.py
+
+# Analyze results
+python app/modules/result_analyzer.py best-hyperopt --limit 10
+
+# Run validation backtests
+python app/modules/backtest_runner.py batch --limit 5
 ```
-your-project/
-├── freqtrade_optimizer.py           # Main application
-├── optimization_config.py           # Configuration data class
-├── strategy_config_manager.py       # Strategy config management
-├── results_database_manager.py      # Database management
-├── results_analyzer.py              # Query and analysis tool
-├── .env                             # Your configuration
-├── config_template.json             # FreqTrade config template
-├── requirements.txt                 # Python dependencies
-├── freqtrade_results.db            # SQLite database (auto-created)
-├── config_files/                   # Generated strategy configs (auto-created)
-├── optimization_results/            # Database-managed result files
-│   ├── configs/                    # Strategy configurations
-│   └── hyperopt_results/           # Detailed hyperopt outputs
-└── logs/                           # Application logs (auto-created)
-```
 
-## Usage
+## 📊 Analysis Tools
 
-### Basic Usage
+### CLI Result Analyzer
+Comprehensive analysis of optimization and backtest results:
 
 ```bash
-# Run optimization (same as before)
-python freqtrade_optimizer.py
+# Show top performing hyperopt strategies
+python app/modules/result_analyzer.py best-hyperopt --limit 10 --min-trades 20
+
+# Show best backtest results
+python app/modules/result_analyzer.py best-backtest --limit 10
+
+# Reality gap analysis (detect overfitting)
+python app/modules/result_analyzer.py gap --strategy RSIStrategy
+
+# Compare optimization vs backtest for specific strategy
+python app/modules/result_analyzer.py vs RSIStrategy
+
+# Show performance timeline
+python app/modules/result_analyzer.py timeline RSIStrategy
+
+# Database statistics
+python app/modules/result_analyzer.py stats
+
+# Export best configurations
+python app/modules/result_analyzer.py export hyperopt --limit 5
+
+# Generate comprehensive strategy report
+python app/modules/result_analyzer.py report RSIStrategy
 ```
 
-### Database Analysis Commands
+### Backtest Runner
+Dedicated tool for running validation backtests:
 
 ```bash
-# Show top 10 performing strategies
-python results_analyzer.py best --limit 10
+# Run backtest from specific hyperopt result
+python app/modules/backtest_runner.py from-hyperopt 123
 
-# Show best strategies for specific timeframe
-python results_analyzer.py best --timeframe 5m --limit 5
+# Batch backtest top strategies
+python app/modules/backtest_runner.py batch --limit 5
 
-# Show only strategies with minimum trades
-python results_analyzer.py best --min-trades 20 --limit 10
+# Show untested hyperopt strategies
+python app/modules/backtest_runner.py list-untested
 
-# Compare multiple strategies
-python results_analyzer.py compare RSIStrategy MACDStrategy EMAStrategy
-
-# Analyze performance by timeframe
-python results_analyzer.py timeframes
-
-# Show recent optimization sessions
-python results_analyzer.py sessions --limit 5
-
-# Show detailed configuration for specific optimization
-python results_analyzer.py config 123
-
-# Export best configurations to files
-python results_analyzer.py export --limit 5 --output best_configs
+# Show backtest opportunities
+python app/modules/backtest_runner.py opportunities
 ```
 
-### Example Output
+## 📁 Project Structure
 
 ```
-[2024-01-15 10:30:00] Starting FreqTrade optimization process...
-[2024-01-15 10:30:01] Configuration loaded successfully
-[2024-01-15 10:30:01] FreqTrade path: /home/user/freqtrade
-[2024-01-15 10:30:01] Exchange: binance
-[2024-01-15 10:30:01] Timeframe: 5m
-[2024-01-15 10:30:01] Pairs: BTC/USDT, ETH/USDT, ADA/USDT
-[2024-01-15 10:30:02] Started optimization session 15
-[2024-01-15 10:30:02] Starting data download...
-[2024-01-15 10:30:05] Data download completed successfully
-[2024-01-15 10:30:06] Found 5 strategies: RSIStrategy, MACDStrategy, BBStrategy, EMAStrategy, StochStrategy
-[2024-01-15 10:30:07] Processing strategy: RSIStrategy
-[2024-01-15 10:30:08] Starting hyperopt for RSIStrategy (Run 1/3)...
-[2024-01-15 10:45:22] Hyperopt completed successfully for RSIStrategy (Run 1) - Profit: 23.45% - Saved as DB record 87
-[2024-01-15 10:45:23] Starting hyperopt for RSIStrategy (Run 2/3)...
-[2024-01-15 11:00:15] Hyperopt completed successfully for RSIStrategy (Run 2) - Profit: 21.87% - Saved as DB record 88
-[2024-01-15 11:00:16] Starting hyperopt for RSIStrategy (Run 3/3)...
-[2024-01-15 11:15:45] Hyperopt completed successfully for RSIStrategy (Run 3) - Profit: 25.12% - Saved as DB record 89
-[2024-01-15 11:15:46] ✓ RSIStrategy optimization completed successfully
-...
+freqtrade-optimizer/
+├── app/
+│   ├── main.py                 # CLI entry point
+│   ├── main_gui.py            # GUI entry point
+│   └── modules/
+│       ├── freqtrade_optimizer.py      # Core optimization logic
+│       ├── freqtrade_executor.py       # Command execution
+│       ├── results_database_manager.py # Database operations
+│       ├── result_analyzer.py          # CLI analysis tool
+│       ├── backtest_runner.py          # Backtest validation tool
+│       ├── optimization_config.py      # Configuration management
+│       ├── strategy_config_manager.py  # Strategy configs
+│       └── dashboard/                  # GUI components
+│           ├── dashboard.py            # Main dashboard
+│           ├── results_analysis_tab.py # Results analysis
+│           ├── data_management_tab.py  # Data management
+│           ├── config_editor_tab.py    # Config editor
+│           ├── execution_tab.py        # Execution interface
+│           └── logs_tab.py             # Log viewer
+├── optimization_results/       # Generated results (auto-created)
+│   ├── configs/               # Strategy configurations
+│   ├── hyperopt_results/      # Detailed hyperopt outputs
+│   └── backtest_results/      # Validation backtest outputs
+├── logs/                      # Application logs (auto-created)
+├── resources/                 # Templates and resources
+│   └── config_template.json   # FreqTrade config template
+├── .env                       # Your configuration
+├── freqtrade_results.db      # SQLite database (auto-created)
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
+```
+
+## 💾 Database Structure
+
+The system uses a simplified two-table SQLite database:
+
+### `hyperopt_results`
+Stores hyperparameter optimization results with:
+- Strategy metadata (name, timeframe, pairs)
+- Performance metrics (profit, trades, win rate, drawdown)
+- Advanced analytics (Sharpe, Calmar, Sortino ratios)
+- Configuration and raw results as JSON
+- Session tracking information
+
+### `backtest_results`
+Stores validation backtest results with:
+- All performance metrics from hyperopt table
+- Additional backtest-specific data (trade duration, best/worst trades)
+- Optional link to originating hyperopt run (`hyperopt_id`)
+- Reality gap calculation support
+
+## 📈 Reality Gap Analysis
+
+One of the key features is detecting overfitting through reality gap analysis:
+
+```bash
+# Show strategies with highest overfitting risk
+python app/modules/result_analyzer.py gap --limit 20
+
+# Analyze specific strategy's performance gap
+python app/modules/result_analyzer.py vs RSIStrategy
+```
+
+**Reality Gap** = Hyperopt Profit % - Backtest Profit %
+
+- **Positive Gap**: Potential overfitting (optimization performed better than backtest)
+- **Negative Gap**: Underoptimization or market changes
+- **Small Gap (±2%)**: Acceptable performance consistency
+
+## 🔧 Configuration
+
+### Environment Variables (.env)
+
+```bash
+# Required Settings
+FREQTRADE_PATH=/home/user/freqtrade
+EXCHANGE=binance
+PAIR_DATA_EXCHANGE=binance
+TIMEFRAME=5m
+HISTORICAL_DATA_IN_DAYS=365
+PAIRS=BTC/USDT,ETH/USDT,ADA/USDT,DOT/USDT,LINK/USDT
+HYPERFUNCTION=SharpeHyperOptLoss
+```
+
+### FreqTrade Config Template
+The system uses `resources/config_template.json` as a base for all strategy configurations. Key settings:
+
+```json
+{
+  "max_open_trades": 3,
+  "stake_currency": "USDT",
+  "stake_amount": 100,
+  "timeframe": "5m",
+  "dry_run": true,
+  "exchange": {
+    "name": "binance",
+    "pair_whitelist": ["BTC/USDT", "ETH/USDT"]
+  }
+}
+```
+
+## 📊 Example Output
+
+### Optimization Session
+```
+[2024-12-16 10:30:00] Starting FreqTrade optimization process...
+[2024-12-16 10:30:01] Configuration loaded successfully
+[2024-12-16 10:30:01] FreqTrade path: /home/user/freqtrade
+[2024-12-16 10:30:01] Exchange: binance | Timeframe: 5m | Pairs: 5
+[2024-12-16 10:30:02] Started session: OptSession_20241216_103000
+[2024-12-16 10:30:05] Data download completed successfully
+[2024-12-16 10:30:06] Found 5 strategies: RSIStrategy, MACDStrategy, EMAStrategy...
+
+Processing RSIStrategy:
+[2024-12-16 10:45:22] ✓ Run 1/3 completed - Profit: +23.45% - DB record 87
+[2024-12-16 11:00:15] ✓ Run 2/3 completed - Profit: +21.87% - DB record 88
+[2024-12-16 11:15:45] ✓ Run 3/3 completed - Profit: +25.12% - DB record 89
+
 ============================================================
 OPTIMIZATION SUMMARY
 ============================================================
@@ -154,432 +270,161 @@ Successful optimizations: 4
 Failed optimizations: 1
 
 TOP 5 PERFORMERS THIS SESSION:
-----------------------------------------
 1. RSIStrategy - +25.12% (45 trades, 67.8% win rate)
 2. MACDStrategy - +18.67% (52 trades, 63.5% win rate)
 3. EMAStrategy - +12.34% (38 trades, 60.5% win rate)
 4. BBStrategy - +8.91% (41 trades, 58.3% win rate)
+
+🎯 VALIDATION BACKTESTS
+Running validation backtests for top 3 strategies...
+✓ RSIStrategy backtest: +22.34% (reality gap: -2.78%)
+✓ MACDStrategy backtest: +16.23% (reality gap: -2.44%)
+✓ EMAStrategy backtest: +11.89% (reality gap: -0.45%)
+
+Use analysis tools to explore results in detail.
 ============================================================
-Session ID: 15
-Use the database query tools to analyze results in detail.
-============================================================
 ```
 
-## Database Analysis Examples
+### CLI Analysis Examples
 
-### Query Top Performers
-
+#### Top Strategies
 ```bash
-$ python results_analyzer.py best --limit 5
+$ python app/modules/result_analyzer.py best-hyperopt --limit 5
 
-🏆 TOP 5 STRATEGIES
-================================================================================
-┌─────────────┬──────────────┬─────────┬──────────┬─────────────┬──────────────┬───────────┬────────────┬─────┐
-│ Strategy    │ Total Profit │ Trades  │ Win Rate │ Avg Profit  │ Max Drawdown │ Timeframe │ Date       │ Run │
-├─────────────┼──────────────┼─────────┼──────────┼─────────────┼──────────────┼───────────┼────────────┼─────┤
-│ RSIStrategy │ +25.12%      │ 45      │ 67.8%    │ +0.56%      │ -8.45%       │ 5m        │ 2024-01-15 │ 3   │
-│ MACDStrat   │ +23.89%      │ 38      │ 71.1%    │ +0.63%      │ -6.23%       │ 15m       │ 2024-01-14 │ 2   │
-│ EMAStrategy │ +18.67%      │ 52      │ 63.5%    │ +0.36%      │ -9.12%       │ 5m        │ 2024-01-15 │ 1   │
-│ BBStrategy  │ +15.34%      │ 41      │ 58.3%    │ +0.37%      │ -11.67%      │ 1h        │ 2024-01-13 │ 3   │
-│ StochStrat  │ +12.45%      │ 33      │ 60.6%    │ +0.38%      │ -7.89%       │ 15m       │ 2024-01-14 │ 1   │
-└─────────────┴──────────────┴─────────┴──────────┴─────────────┴──────────────┴───────────┴────────────┴─────┘
+🏆 TOP 5 HYPEROPT STRATEGIES
+┌─────────────┬──────────────┬─────────┬──────────┬─────────────┬──────────────┬───────────┬────────────┐
+│ Strategy    │ Total Profit │ Trades  │ Win Rate │ Avg Profit  │ Max Drawdown │ Sharpe    │ Date       │
+├─────────────┼──────────────┼─────────┼──────────┼─────────────┼──────────────┼───────────┼────────────┤
+│ RSIStrategy │ +25.12%      │ 45      │ 67.8%    │ +0.56%      │ -8.45%       │ 1.34      │ 2024-12-16 │
+│ MACDStrat   │ +23.89%      │ 38      │ 71.1%    │ +0.63%      │ -6.23%       │ 1.56      │ 2024-12-16 │
+│ EMAStrategy │ +18.67%      │ 52      │ 63.5%    │ +0.36%      │ -9.12%       │ 1.12      │ 2024-12-16 │
+│ BBStrategy  │ +15.34%      │ 41      │ 58.3%    │ +0.37%      │ -11.67%      │ 0.98      │ 2024-12-15 │
+│ StochStrat  │ +12.45%      │ 33      │ 60.6%    │ +0.38%      │ -7.89%       │ 1.08      │ 2024-12-15 │
+└─────────────┴──────────────┴─────────┴──────────┴─────────────┴──────────────┴───────────┴────────────┘
 ```
 
-### Compare Strategies
-
+#### Reality Gap Analysis
 ```bash
-$ python results_analyzer.py compare RSIStrategy MACDStrategy EMAStrategy
+$ python app/modules/result_analyzer.py gap --limit 5
 
-📊 STRATEGY COMPARISON
-================================================================================
-┌─────────────┬──────┬─────────────┬─────────┬─────────┬─────────────┬──────────────┬─────────────┐
-│ Strategy    │ Runs │ Avg Profit  │ Best    │ Worst   │ Avg Trades  │ Avg Win Rate │ Avg Drawdown│
-├─────────────┼──────┼─────────────┼─────────┼─────────┼─────────────┼──────────────┼─────────────┤
-│ RSIStrategy │ 9    │ +19.23%     │ +25.12% │ +11.45% │ 43          │ 65.2%        │ -9.12%      │
-│ MACDStrat   │ 6    │ +17.89%     │ +23.89% │ +8.23%  │ 39          │ 68.1%        │ -7.45%      │
-│ EMAStrategy │ 6    │ +14.56%     │ +18.67% │ +6.78%  │ 48          │ 61.3%        │ -10.23%     │
-└─────────────┴──────┴─────────────┴─────────┴─────────┴─────────────┴──────────────┴─────────────┘
+📊 REALITY GAP ANALYSIS
+┌─────────────┬─────────────┬─────────────┬──────────┬───────────────┬─────────────┐
+│ Strategy    │ Opt Profit  │ BT Profit   │ Gap      │ Assessment    │ Status      │
+├─────────────┼─────────────┼─────────────┼──────────┼───────────────┼─────────────┤
+│ RSIStrategy │ +25.12%     │ +22.34%     │ -2.78%   │ Acceptable    │ ✓ Tested    │
+│ MACDStrat   │ +23.89%     │ +16.23%     │ -7.66%   │ Overfitting   │ ✓ Tested    │
+│ EMAStrategy │ +18.67%     │ +11.89%     │ -6.78%   │ Overfitting   │ ✓ Tested    │
+│ BBStrategy  │ +15.34%     │ N/A         │ N/A      │ Not Tested    │ ✗ Pending   │
+│ StochStrat  │ +12.45%     │ N/A         │ N/A      │ Not Tested    │ ✗ Pending   │
+└─────────────┴─────────────┴─────────────┴──────────┴───────────────┴─────────────┘
+
+📈 SUMMARY: Average gap: -5.74% | High risk strategies: 2/3
 ```
 
-### Timeframe Analysis
+## 🔍 Advanced Usage
 
-```bash
-$ python results_analyzer.py timeframes
-
-⏰ TIMEFRAME ANALYSIS
-================================================================================
-┌───────────┬────────────┬─────────────┬─────────────┬─────────────┬─────────────┬──────────────┐
-│ Timeframe │ Total Opts │ Strategies  │ Avg Profit  │ Best Profit │ Avg Trades  │ Avg Win Rate │
-├───────────┼────────────┼─────────────┼─────────────┼─────────────┼─────────────┼──────────────┤
-│ 5m        │ 24         │ 8           │ +16.23%     │ +25.12%     │ 45          │ 64.2%        │
-│ 15m       │ 18         │ 6           │ +14.67%     │ +23.89%     │ 38          │ 66.8%        │
-│ 1h        │ 12         │ 4           │ +11.45%     │ +19.34%     │ 28          │ 62.1%        │
-│ 4h        │ 6          │ 2           │ +8.23%      │ +12.67%     │ 18          │ 58.9%        │
-└───────────┴────────────┴─────────────┴─────────────┴─────────────┴─────────────┴──────────────┘
-```
-
-## Advanced SQL Queries
-
-You can directly query the SQLite database for custom analysis:
-
-### Find Best Strategy per Timeframe
+### Custom SQL Queries
+Access the SQLite database directly for custom analysis:
 
 ```sql
-SELECT 
-    timeframe,
-    strategy_name,
-    total_profit_pct,
-    total_trades,
-    win_rate
-FROM strategy_optimizations s1
-WHERE total_profit_pct = (
-    SELECT MAX(total_profit_pct) 
-    FROM strategy_optimizations s2 
-    WHERE s2.timeframe = s1.timeframe
-    AND s2.total_trades >= 10
-)
-ORDER BY timeframe, total_profit_pct DESC;
-```
-
-### Strategy Performance Over Time
-
-```sql
-SELECT 
-    strategy_name,
-    DATE(optimization_timestamp) as date,
-    AVG(total_profit_pct) as avg_profit,
-    COUNT(*) as runs,
-    MAX(total_profit_pct) as best_profit
-FROM strategy_optimizations 
-WHERE strategy_name = 'RSIStrategy'
-GROUP BY strategy_name, DATE(optimization_timestamp)
-ORDER BY date DESC;
-```
-
-### Find Consistent Performers
-
-```sql
+-- Find strategies with consistent performance across runs
 SELECT 
     strategy_name,
     COUNT(*) as total_runs,
     AVG(total_profit_pct) as avg_profit,
-    MIN(total_profit_pct) as worst_profit,
-    MAX(total_profit_pct) as best_profit,
-    (MAX(total_profit_pct) - MIN(total_profit_pct)) as profit_range,
-    AVG(win_rate) as avg_win_rate
-FROM strategy_optimizations 
-WHERE total_trades >= 10
+    STDEV(total_profit_pct) as profit_volatility,
+    MIN(total_profit_pct) as worst_run,
+    MAX(total_profit_pct) as best_run
+FROM hyperopt_results 
+WHERE status = 'completed' AND total_trades >= 20
 GROUP BY strategy_name
 HAVING total_runs >= 3
-ORDER BY avg_profit DESC, profit_range ASC;
+ORDER BY profit_volatility ASC, avg_profit DESC;
 ```
 
-### High-Frequency Trading Analysis
+### Batch Operations
+```bash
+# Export configurations for top 10 strategies
+python app/modules/result_analyzer.py export hyperopt --limit 10 --output production_configs
 
-```sql
-SELECT 
-    strategy_name,
-    timeframe,
-    AVG(total_trades) as avg_trades_per_run,
-    AVG(total_profit_pct) as avg_profit,
-    AVG(win_rate) as avg_win_rate,
-    COUNT(*) as optimization_runs
-FROM strategy_optimizations 
-WHERE timeframe IN ('1m', '5m', '15m')
-AND total_trades >= 50
-GROUP BY strategy_name, timeframe
-ORDER BY avg_profit DESC;
+# Run backtests for all untested strategies
+python app/modules/backtest_runner.py batch --limit 20
 ```
 
-### Risk-Adjusted Performance
+### GUI Advanced Features
+- **Real-time Execution**: Monitor optimization progress with live output
+- **Configuration Editor**: Edit JSON configs with syntax highlighting and validation
+- **Data Browser**: Explore downloaded market data with filtering
+- **Log Viewer**: Monitor application logs with auto-refresh and filtering
 
-```sql
-SELECT 
-    strategy_name,
-    AVG(total_profit_pct) as avg_profit,
-    AVG(max_drawdown_pct) as avg_drawdown,
-    AVG(sharpe_ratio) as avg_sharpe,
-    (AVG(total_profit_pct) / ABS(AVG(max_drawdown_pct))) as profit_to_drawdown_ratio
-FROM strategy_optimizations 
-WHERE total_trades >= 20
-AND max_drawdown_pct < 0
-GROUP BY strategy_name
-ORDER BY profit_to_drawdown_ratio DESC;
-```
-
-### Session Performance Tracking
-
-```sql
-SELECT 
-    os.id as session_id,
-    os.session_timestamp,
-    os.successful_strategies,
-    os.total_strategies,
-    ROUND(os.successful_strategies * 100.0 / os.total_strategies, 1) as success_rate,
-    os.session_duration_seconds / 60 as duration_minutes,
-    AVG(so.total_profit_pct) as avg_session_profit
-FROM optimization_sessions os
-LEFT JOIN session_strategies ss ON os.id = ss.session_id
-LEFT JOIN strategy_optimizations so ON ss.optimization_id = so.id
-GROUP BY os.id, os.session_timestamp, os.successful_strategies, os.total_strategies, os.session_duration_seconds
-ORDER BY os.session_timestamp DESC
-LIMIT 10;
-```
-
-### Best Configurations for Specific Pairs
-
-```sql
-SELECT 
-    strategy_name,
-    total_profit_pct,
-    total_trades,
-    win_rate,
-    pair_whitelist,
-    config_file_path
-FROM strategy_optimizations 
-WHERE pair_whitelist LIKE '%BTC/USDT%'
-AND total_trades >= 15
-ORDER BY total_profit_pct DESC
-LIMIT 10;
-```
-
-## Features Explained
-
-### Database Integration
-- **SQLite Database**: Stores searchable metadata for fast queries
-- **JSON Files**: Preserves complete configurations and detailed results
-- **Session Tracking**: Groups optimization runs and tracks overall performance
-- **Hybrid Storage**: Best of both worlds - fast queries and complete data
-
-### Multi-Run Optimization
-Each strategy is optimized 3 times to account for randomness in hyperparameter optimization. All results are stored in the database for analysis.
-
-### Smart File Organization
-- Database stores searchable metadata (profit, trades, timeframes, etc.)
-- JSON files contain complete configurations and detailed hyperopt results
-- Automatic file organization in timestamped directories
-
-### Advanced Analytics
-- Compare strategies across multiple dimensions
-- Track performance trends over time
-- Analyze optimal timeframes and configurations
-- Export best configurations for production use
-
-### Comprehensive Logging
-- Console output for real-time monitoring
-- Detailed log files in the `logs/` directory
-- Database logging for all operations
-- Error tracking and debugging information
-
-## Configuration Options
-
-### Hyperopt Parameters
-The application uses the following default hyperopt settings:
-- **Epochs**: 200 (configurable in `OptimizationConfig`)
-- **Spaces**: buy, sell, roi, stoploss
-- **Timeout**: 1 hour per optimization run
-- **Loss Function**: Configurable via `HYPERFUNCTION` env var
-
-### Supported Loss Functions
-- `SharpeHyperOptLoss` - Sharpe ratio optimization
-- `SortinoHyperOptLoss` - Sortino ratio optimization
-- `CalmarHyperOptLoss` - Calmar ratio optimization
-- `MaxDrawDownHyperOptLoss` - Minimize drawdown
-- `ProfitDrawDownHyperOptLoss` - Profit vs drawdown balance
-
-## Database Schema
-
-### Main Tables
-
-1. **strategy_optimizations**: Individual optimization results
-   - Strategy metadata (name, timeframe, pairs)
-   - Performance metrics (profit, trades, win rate, drawdown)
-   - File paths to detailed configs and results
-   - Optimization settings and duration
-
-2. **optimization_sessions**: Groups of optimization runs
-   - Session metadata and summary statistics
-   - Configuration used for the entire session
-
-3. **session_strategies**: Links strategies to sessions
-
-### Key Fields for Analysis
-
-- `total_profit_pct`: Profit percentage (e.g., 5.25 for 5.25%)
-- `total_trades`: Number of trades executed
-- `win_rate`: Percentage of winning trades
-- `max_drawdown_pct`: Maximum drawdown percentage
-- `sharpe_ratio`: Risk-adjusted return metric
-- `timeframe`: Trading timeframe (5m, 15m, 1h, etc.)
-- `strategy_name`: Name of the strategy
-- `optimization_timestamp`: When the optimization was run
-
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 ### Common Issues
 
 1. **"FreqTrade path does not exist"**
    - Check your `FREQTRADE_PATH` in `.env`
-   - Ensure the path is absolute, not relative
+   - Ensure the path is absolute and points to FreqTrade installation
 
 2. **"No strategies found"**
    - Verify strategies are in `{FREQTRADE_PATH}/user_data/strategies/`
-   - Check that strategy files are `.py` files
-   - Ensure files don't start with `__` (like `__init__.py`)
+   - Ensure files are `.py` files and don't start with `__`
 
 3. **"Data download failed"**
-   - Check internet connection
-   - Verify exchange name is correct
-   - Ensure trading pairs are valid for the exchange
+   - Check internet connection and exchange availability
+   - Verify trading pairs are valid for the selected exchange
 
 4. **"Database connection failed"**
    - Check write permissions in project directory
-   - Ensure SQLite is available (included with Python)
-   - Verify disk space for database file
+   - Ensure sufficient disk space
 
 5. **"Hyperopt failed"**
-   - Check FreqTrade virtual environment is properly set up
-   - Verify strategy file syntax is correct
-   - Ensure sufficient disk space for optimization data
+   - Verify FreqTrade virtual environment setup
+   - Check strategy file syntax
+   - Review logs in `logs/` directory
 
-### Environment Setup
+### Getting Help
 
-**For Linux/macOS**:
+1. **Check Logs**: Application logs in `logs/` directory provide detailed error information
+2. **Database Stats**: Run `python app/modules/result_analyzer.py stats` to check database health
+3. **Validate Environment**: Ensure FreqTrade installation is working independently
+
+## 🔄 Migration
+
+### From Older Versions
 ```bash
-# Ensure FreqTrade venv exists
-cd /path/to/freqtrade
-python -m venv .venv
-source .venv/bin/activate
-pip install freqtrade
+# Migrate from old database schema
+python app/modules/result_analyzer.py migrate
+
+# Clean up old tables after migration
+python app/modules/result_analyzer.py cleanup-old-tables --confirm
 ```
 
-**For Windows**:
-```cmd
-# Ensure FreqTrade venv exists
-cd C:\path\to\freqtrade
-python -m venv .venv
-.venv\Scripts\activate
-pip install freqtrade
-```
+## 📋 Requirements
 
-## Advanced Usage
+- **Python**: 3.8+
+- **FreqTrade**: Latest version with virtual environment setup
+- **Disk Space**: ~1GB for database and result files (varies by usage)
+- **Memory**: 4GB+ recommended for multiple concurrent optimizations
+- **Platform**: Windows, macOS, Linux
 
-### Custom Analysis Scripts
+## 🎯 Best Practices
 
-```python
-import sqlite3
-from app.modules.results_database_manager import ResultsDatabaseManager
+1. **Start Small**: Begin with 2-3 strategies and shorter timeframes
+2. **Monitor Reality Gap**: Regular backtest validation prevents overfitting
+3. **Use Session Tracking**: Organize optimization runs logically
+4. **Export Configurations**: Save best-performing configs for production
+5. **Regular Backups**: Backup `freqtrade_results.db` and `optimization_results/`
 
-# Initialize database manager
-db_manager = ResultsDatabaseManager()
+## 📄 License
 
-# Get best strategies
-best_strategies = db_manager.get_best_strategies(limit=10)
+This project is open source. Please ensure you comply with FreqTrade's license terms when using this tool.
 
-# Custom query example
-with sqlite3.connect('old/freqtrade_results.db') as conn:
-   cursor = conn.execute("""
-        SELECT strategy_name, AVG(total_profit_pct) as avg_profit
-        FROM strategy_optimizations 
-        WHERE total_trades >= 20
-        GROUP BY strategy_name
-        ORDER BY avg_profit DESC
-    """)
-   for row in cursor.fetchall():
-      print(f"{row[0]}: {row[1]:.2f}% average profit")
-```
+## 🤝 Contributing
 
-### Batch Processing
+Contributions are welcome! Please ensure any changes maintain compatibility with the existing database structure and CLI interfaces.
 
-```bash
-# Run multiple optimization sessions with different timeframes
-for timeframe in 5m 15m 1h; do
-    echo "TIMEFRAME=$timeframe" > .env.temp
-    cat .env >> .env.temp
-    mv .env.temp .env
-    python freqtrade_optimizer.py
-done
-```
+---
 
-### Integration with CI/CD
+**Happy Trading!** 🚀📈
 
-The application returns appropriate exit codes:
-- `0` - Success (at least one strategy optimized)
-- `1` - Failure (no strategies successfully optimized)
-
-## Performance Considerations
-
-- **Memory Usage**: Each optimization can use 1-2 GB RAM
-- **CPU Usage**: Highly CPU intensive, benefits from multiple cores
-- **Disk Space**: Database and JSON files can accumulate over time
-- **Network**: Initial data download requires stable internet
-- **Database Performance**: Indexes are automatically created for fast queries
-
-## Backup and Maintenance
-
-### Database Backup
-```bash
-# Backup database
-cp freqtrade_results.db freqtrade_results_backup_$(date +%Y%m%d).db
-
-# Backup result files
-tar -czf optimization_results_backup_$(date +%Y%m%d).tar.gz optimization_results/
-```
-
-### Maintenance Queries
-```sql
--- Clean up old results (older than 6 months)
-DELETE FROM strategy_optimizations 
-WHERE optimization_timestamp < datetime('now', '-6 months');
-
--- Vacuum database to reclaim space
-VACUUM;
-
--- Check database integrity
-PRAGMA integrity_check;
-```
-
-## Security Notes
-
-- Never commit `.env` files to version control
-- Keep API keys and secrets out of config templates
-- Use sandbox mode for testing
-- Regularly backup database and result files
-- Consider encryption for sensitive trading data
-
-## Migration from File-Only System
-
-If you have existing result files, you can create a migration script:
-
-```python
-# migration_example.py
-import json
-from pathlib import Path
-from app.modules.results_database_manager import ResultsDatabaseManager, OptimizationResult
-
-db_manager = ResultsDatabaseManager()
-
-# Process existing result files
-results_dir = Path("old_results")
-for result_file in results_dir.glob("*.json"):
-   with open(result_file, 'r') as f:
-      data = json.load(f)
-
-   # Extract data and create OptimizationResult
-   # ... (custom parsing logic based on your old file format)
-
-   # Save to database
-   db_manager.save_optimization_result(result)
-```
-
-## Support
-
-For FreqTrade-specific issues, consult:
-- [FreqTrade Documentation](https://www.freqtrade.io/)
-- [FreqTrade GitHub](https://github.com/freqtrade/freqtrade)
-
-For application-specific issues:
-- Check the generated log files in `logs/`
-- Verify configuration in `.env`
-- Ensure all dependencies are installed
-- Use the database query tools for result analysis
+For more detailed information about the database structure, see [Database.md](app/Database.md)

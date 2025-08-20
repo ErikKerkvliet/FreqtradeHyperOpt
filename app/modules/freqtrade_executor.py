@@ -39,7 +39,7 @@ class FreqTradeExecutor:
     Handles hyperopt, backtest, and data download commands with simplified database integration.
     """
 
-    def __init__(self, config: OptimizationConfig = None, logger: logging.Logger = None):
+    def __init__(self, config: OptimizationConfig = None, logger: logging.Logger = None, db_manager: DatabaseManager = None):
         """
         Initialize the executor.
 
@@ -49,7 +49,7 @@ class FreqTradeExecutor:
         """
         self.config = config
         self.logger = logger or self._setup_default_logger()
-        self.db_manager = DatabaseManager()
+        self.db_manager = db_manager
         self.strategy_config_manager = None
 
         if self.config:

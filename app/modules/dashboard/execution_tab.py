@@ -3,7 +3,7 @@
 Execution Tab
 Handles the execution functionality of the dashboard.
 """
-
+import json
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -24,7 +24,7 @@ class ExecutionTab(AbstractTab):
         # Tab-specific variables
         self.exec_strategy_var = tk.StringVar()
         self.exec_config_var = tk.StringVar()
-        self.exec_timerange_var = tk.StringVar(value="20240101-20241201")
+        self.exec_timerange_var = tk.StringVar(value="20250101-")
         self.exec_epochs_var = tk.StringVar(value="100")
         self.exec_hyperfunction_var = tk.StringVar(value="SharpeHyperOptLoss")
         self.progress_var = tk.StringVar(value="Ready")
@@ -280,8 +280,43 @@ class ExecutionTab(AbstractTab):
         self.execution_thread.start()
 
     def _download_data(self):
-        """Download market data."""
-        self.call_callback('show_download_dialog')
+        """Download market data with config pre-fill if available."""
+        # Try to extract data from selected config file
+        config_data = self._extract_config_data()
+
+        # Call the main dashboard's download dialog with pre-filled data
+        self.call_callback('show_download_dialog', config_data)
+
+    def _extract_config_data(self) -> dict:
+        """Extract relevant data from the selected config file."""
+        config_data = {}
+
+        try:
+            config_file = self.exec_config_var.get()
+            if config_file and Path(config_file).exists():
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+
+                # Extract exchange information
+                if 'exchange' in config:
+                    exchange_info = config['exchange']
+                    config_data['exchange'] = exchange_info.get('name', '')
+                    config_data['pairs'] = exchange_info.get('pair_whitelist', [])
+
+                # Extract timeframe
+                config_data['timeframe'] = config.get('timeframe', '')
+
+                # Extract stake currency for context
+                config_data['stake_currency'] = config.get('stake_currency', '')
+
+                self.logger.info(f"Extracted config data: exchange={config_data.get('exchange')}, "
+                                 f"pairs={len(config_data.get('pairs', []))}, "
+                                 f"timeframe={config_data.get('timeframe')}")
+
+        except Exception as e:
+            self.logger.warning(f"Could not extract config data: {e}")
+
+        return config_data
 
     def _stop_execution(self):
         """Stop the current execution."""
